@@ -1,6 +1,6 @@
 """
 mbed SDK
-Copyright (c) 2011-2016 ARM Limited
+Copyright (c) 2011-2020 ARM Limited
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -646,7 +646,7 @@ class MCU_NRF51Code(object):
             binh.write_hex_file(fileout, write_start_addr=False)
 
 
-class NCS36510TargetCode:
+class NCS36510TargetCode(object):
     @staticmethod
     def ncs36510_addfib(t_self, resources, elf, binf):
         from tools.targets.NCS import add_fib_at_start
@@ -654,7 +654,7 @@ class NCS36510TargetCode:
         add_fib_at_start(binf[:-4])
 
 
-class RTL8195ACode:
+class RTL8195ACode(object):
     """RTL8195A Hooks"""
     @staticmethod
     def binary_hook(t_self, resources, elf, binf):
@@ -662,7 +662,7 @@ class RTL8195ACode:
         rtl8195a_elf2bin(t_self, elf, binf)
 
 
-class PSOC6Code:
+class PSOC6Code(object):
     @staticmethod
     def complete(t_self, resources, elf, binf):
         from tools.targets.PSOC6 import complete as psoc6_complete
@@ -675,8 +675,26 @@ class PSOC6Code:
         else:
             psoc6_complete(t_self, elf, binf)
 
+    @staticmethod
+    def sign_image(t_self, resources, elf, binf):
+        """
+        Calls sign_image function to add signature to Secure Boot binary file.
+        """
+        version = sys.version_info
 
-class ArmMuscaA1Code:
+        # check python version before calling post build as is supports only python3+
+        if((version[0] < 3) is True):
+            t_self.notify.info("[PSOC6.sing_image] Be careful - produced HEX file was not signed and thus "
+                               "is not compatible with Cypress Secure Boot target. "
+                               "You are using Python " + str(sys.version[:5]) + 
+                               " which is not supported by CySecureTools. "
+                               "Consider installing Python 3.4+ and rebuild target. "
+                               "For more information refver to User Guide https://www.cypress.com/secureboot-sdk-user-guide")
+        else:
+            from tools.targets.PSOC6 import sign_image as psoc6_sign_image
+            psoc6_sign_image(t_self, binf)
+
+class ArmMuscaA1Code(object):
     """Musca-A1 Hooks"""
     @staticmethod
     def binary_hook(t_self, resources, elf, binf):
@@ -691,8 +709,22 @@ class ArmMuscaA1Code:
         )
         musca_tfm_bin(t_self, binf, secure_bin)
 
+class ArmMuscaB1Code(object):
+    """Musca-B1 Hooks"""
+    @staticmethod
+    def binary_hook(t_self, resources, elf, binf):
+        from tools.targets.ARM_MUSCA_B1 import musca_tfm_bin
+        configured_secure_image_filename = t_self.target.secure_image_filename
+        secure_bin = find_secure_image(
+            t_self.notify,
+            resources,
+            binf,
+            configured_secure_image_filename,
+            FileType.BIN
+        )
+        musca_tfm_bin(t_self, binf, secure_bin)
 
-class LPC55S69Code:
+class LPC55S69Code(object):
     """LPC55S69 Hooks"""
     @staticmethod
     def binary_hook(t_self, resources, elf, binf):
@@ -707,6 +739,54 @@ class LPC55S69Code:
         )
         lpc55s69_complete(t_self, binf, secure_bin)
 
+class M2351Code(object):
+    """M2351 Hooks"""
+    @staticmethod
+    def merge_secure(t_self, resources, ns_elf, ns_hex):
+        t_self.notify.info("Merging non-secure image with secure image")
+        configured_secure_image_filename = t_self.target.secure_image_filename
+        t_self.notify.info("Non-secure elf image %s" % ns_elf)
+        t_self.notify.info("Non-secure hex image %s" % ns_hex)
+        t_self.notify.info("Finding secure image %s" % configured_secure_image_filename)
+        s_hex = find_secure_image(
+            t_self.notify,
+            resources,
+            ns_hex,
+            configured_secure_image_filename,
+            FileType.HEX
+        )
+        t_self.notify.info("Found secure image %s" % s_hex)
+
+        _, ext = os.path.splitext(s_hex)
+        if ext != ".hex":
+            t_self.notify.debug("Secure image %s must be in Intel HEX format" % s_hex)
+            return
+        if not os.path.isfile(s_hex):
+            t_self.notify.debug("Secure image %s must be regular file" % s_hex)
+            return
+
+        ns_main, ext = os.path.splitext(ns_hex)
+        if ext != ".hex":
+            t_self.notify.debug("Non-secure image %s must be in Intel HEX format" % s_hex)
+            return
+        if not os.path.isfile(ns_hex):
+            t_self.notify.debug("Non-secure image %s must be regular file" % s_hex)
+            return
+
+        # Keep original non-secure before merge with secure
+        ns_nosecure_hex = ns_main + "_no-secure-merge" + ext
+        t_self.notify.info("Keep no-secure-merge image %s" % ns_nosecure_hex)
+        shutil.copy2(ns_hex, ns_nosecure_hex)
+
+        # Merge secure and non-secure and save to non-secure (override it)
+        from intelhex import IntelHex
+        s_ih = IntelHex()
+        s_ih.loadhex(s_hex)
+        ns_ih = IntelHex()
+        ns_ih.loadhex(ns_hex)
+        ns_ih.start_addr = None
+        s_ih.merge(ns_ih)
+        s_ih.tofile(ns_hex, 'hex')
 
 # End Target specific section
 ###############################################################################

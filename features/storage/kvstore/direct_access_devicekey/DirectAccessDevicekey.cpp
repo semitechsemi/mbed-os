@@ -17,6 +17,7 @@
 // ----------------------------------------------------------- Includes -----------------------------------------------------------
 #if DEVICE_FLASH
 #include "DirectAccessDevicekey.h"
+#include "drivers/FlashIAP.h"
 #include <string.h>
 #include <stdio.h>
 #include "mbed_error.h"
@@ -118,15 +119,33 @@ int  get_expected_internal_TDBStore_position(uint32_t *out_tdb_start_offset, uin
     uint32_t tdb_size;
 
     if (strcmp(STR(MBED_CONF_STORAGE_STORAGE_TYPE), "FILESYSTEM") == 0) {
+#ifndef MBED_CONF_STORAGE_FILESYSTEM_INTERNAL_BASE_ADDRESS
+        return MBED_ERROR_ITEM_NOT_FOUND;
+#else
         *out_tdb_start_offset =  MBED_CONF_STORAGE_FILESYSTEM_INTERNAL_BASE_ADDRESS;
         tdb_size = MBED_CONF_STORAGE_FILESYSTEM_RBP_INTERNAL_SIZE;
+#endif
+
     } else if (strcmp(STR(MBED_CONF_STORAGE_STORAGE_TYPE), "TDB_EXTERNAL") == 0) {
+#ifndef MBED_CONF_STORAGE_TDB_EXTERNAL_INTERNAL_BASE_ADDRESS
+        return MBED_ERROR_ITEM_NOT_FOUND;
+#else
         *out_tdb_start_offset =  MBED_CONF_STORAGE_TDB_EXTERNAL_INTERNAL_BASE_ADDRESS;
         tdb_size = MBED_CONF_STORAGE_TDB_EXTERNAL_RBP_INTERNAL_SIZE;
+#endif
+
     } else if (strcmp(STR(MBED_CONF_STORAGE_STORAGE_TYPE), "TDB_INTERNAL") == 0) {
+#ifndef MBED_CONF_STORAGE_TDB_INTERNAL_INTERNAL_BASE_ADDRESS
+        return MBED_ERROR_ITEM_NOT_FOUND;
+#else
         *out_tdb_start_offset =  MBED_CONF_STORAGE_TDB_INTERNAL_INTERNAL_BASE_ADDRESS;
         tdb_size = MBED_CONF_STORAGE_TDB_INTERNAL_INTERNAL_SIZE;
+#endif
+
     } else if (strcmp(STR(MBED_CONF_STORAGE_STORAGE_TYPE), "default") == 0) {
+#ifndef MBED_CONF_STORAGE_TDB_EXTERNAL_INTERNAL_BASE_ADDRESS
+        return MBED_ERROR_ITEM_NOT_FOUND;
+#else
 #if COMPONENT_QSPIF || COMPONENT_SPIF || COMPONENT_DATAFLASH
         *out_tdb_start_offset =  MBED_CONF_STORAGE_TDB_EXTERNAL_INTERNAL_BASE_ADDRESS;
         tdb_size = MBED_CONF_STORAGE_TDB_EXTERNAL_RBP_INTERNAL_SIZE;
@@ -134,7 +153,8 @@ int  get_expected_internal_TDBStore_position(uint32_t *out_tdb_start_offset, uin
         tdb_size = MBED_CONF_STORAGE_FILESYSTEM_RBP_INTERNAL_SIZE;
 #else
         return MBED_ERROR_UNSUPPORTED;
-#endif
+#endif // COMPONENT_QSPIF || COMPONENT_SPIF || COMPONENT_DATAFLASH
+#endif // MBED_CONF_STORAGE_TDB_EXTERNAL_INTERNAL_BASE_ADDRESS
     } else {
         return MBED_ERROR_UNSUPPORTED;
     }
@@ -289,7 +309,7 @@ static uint32_t calc_crc(uint32_t init_crc, uint32_t data_size, const void *data
 {
     uint32_t crc;
     MbedCRC<POLY_32BIT_ANSI, 32> ct(init_crc, 0x0, true, false);
-    ct.compute(const_cast<void *>(data_buf), data_size, &crc);
+    ct.compute(data_buf, data_size, &crc);
     return crc;
 }
 #endif // DEVICE_FLASH

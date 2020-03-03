@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2017 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -526,7 +527,7 @@ void test_dispatch0()
     Verifier<T>::verify0(cb);
     cb = static_func0;
     Verifier<T>::verify0(cb);
-    cb.attach(&bound_func0<T>, &thing);
+    cb = {&bound_func0<T>, &thing};
     Verifier<T>::verify0(&cb, &Callback<T()>::call);
     Verifier<T>::verify0(&Callback<T()>::thunk, (void *)&cb);
 }
@@ -557,7 +558,7 @@ void test_dispatch1()
     Verifier<T>::verify1(cb);
     cb = static_func1;
     Verifier<T>::verify1(cb);
-    cb.attach(&bound_func1<T>, &thing);
+    cb = {&bound_func1<T>, &thing};
     Verifier<T>::verify1(&cb, &Callback<T(T)>::call);
     Verifier<T>::verify1(&Callback<T(T)>::thunk, (void *)&cb);
 }
@@ -588,7 +589,7 @@ void test_dispatch2()
     Verifier<T>::verify2(cb);
     cb = static_func2;
     Verifier<T>::verify2(cb);
-    cb.attach(&bound_func2<T>, &thing);
+    cb = {&bound_func2<T>, &thing};
     Verifier<T>::verify2(&cb, &Callback<T(T, T)>::call);
     Verifier<T>::verify2(&Callback<T(T, T)>::thunk, (void *)&cb);
 }
@@ -619,7 +620,7 @@ void test_dispatch3()
     Verifier<T>::verify3(cb);
     cb = static_func3;
     Verifier<T>::verify3(cb);
-    cb.attach(&bound_func3<T>, &thing);
+    cb = {&bound_func3<T>, &thing};
     Verifier<T>::verify3(&cb, &Callback<T(T, T, T)>::call);
     Verifier<T>::verify3(&Callback<T(T, T, T)>::thunk, (void *)&cb);
 }
@@ -650,7 +651,7 @@ void test_dispatch4()
     Verifier<T>::verify4(cb);
     cb = static_func4;
     Verifier<T>::verify4(cb);
-    cb.attach(&bound_func4<T>, &thing);
+    cb = {&bound_func4<T>, &thing};
     Verifier<T>::verify4(&cb, &Callback<T(T, T, T, T)>::call);
     Verifier<T>::verify4(&Callback<T(T, T, T, T)>::thunk, (void *)&cb);
 }
@@ -681,7 +682,7 @@ void test_dispatch5()
     Verifier<T>::verify5(cb);
     cb = static_func5;
     Verifier<T>::verify5(cb);
-    cb.attach(&bound_func5<T>, &thing);
+    cb = {&bound_func5<T>, &thing};
     Verifier<T>::verify5(&cb, &Callback<T(T, T, T, T, T)>::call);
     Verifier<T>::verify5(&Callback<T(T, T, T, T, T)>::thunk, (void *)&cb);
 }
@@ -695,12 +696,28 @@ utest::v1::status_t test_setup(const size_t number_of_cases)
 }
 
 Case cases[] = {
+#ifdef DO_BIG_TEST
+    Case("Testing callbacks with 0 uint64s", test_dispatch0<uint64_t>),
+    Case("Testing callbacks with 1 uint64s", test_dispatch1<uint64_t>),
+    Case("Testing callbacks with 2 uint64s", test_dispatch2<uint64_t>),
+    Case("Testing callbacks with 3 uint64s", test_dispatch3<uint64_t>),
+    Case("Testing callbacks with 4 uint64s", test_dispatch4<uint64_t>),
+    Case("Testing callbacks with 5 uint64s", test_dispatch5<uint64_t>),
+#elif DO_SMALL_TEST
+    Case("Testing callbacks with 0 uchars", test_dispatch0<unsigned char>),
+    Case("Testing callbacks with 1 uchars", test_dispatch1<unsigned char>),
+    Case("Testing callbacks with 2 uchars", test_dispatch2<unsigned char>),
+    Case("Testing callbacks with 3 uchars", test_dispatch3<unsigned char>),
+    Case("Testing callbacks with 4 uchars", test_dispatch4<unsigned char>),
+    Case("Testing callbacks with 5 uchars", test_dispatch5<unsigned char>),
+#else
     Case("Testing callbacks with 0 ints", test_dispatch0<int>),
     Case("Testing callbacks with 1 ints", test_dispatch1<int>),
     Case("Testing callbacks with 2 ints", test_dispatch2<int>),
     Case("Testing callbacks with 3 ints", test_dispatch3<int>),
     Case("Testing callbacks with 4 ints", test_dispatch4<int>),
     Case("Testing callbacks with 5 ints", test_dispatch5<int>),
+#endif
 };
 
 Specification specification(test_setup, cases);

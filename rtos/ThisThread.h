@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2019 ARM Limited
+ * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,9 +27,9 @@
 #include "rtos/mbed_rtos_types.h"
 
 namespace rtos {
-/** \ingroup mbed-os-public */
 /** \addtogroup rtos-public-api */
 /** @{*/
+
 /**
  * \defgroup rtos_ThisThread ThisThread namespace
  * @{
@@ -185,7 +186,11 @@ const char *get_name();
 /** @}*/
 /** @}*/
 
+
 namespace internal {
+/** \addtogroup rtos-internal-api */
+/** @{*/
+
 struct flags_check_capture {
     uint32_t *flags;
     uint32_t options;
@@ -197,5 +202,6 @@ struct flags_check_capture {
 bool non_rtos_check_flags(void *handle);
 
 }
+/** @}*/
 }
 #endif

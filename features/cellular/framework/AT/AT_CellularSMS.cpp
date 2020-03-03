@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+#if MBED_CONF_CELLULAR_USE_SMS
+
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -175,8 +177,9 @@ static const unsigned char gsm_to_ascii[] = {
 
 const int GSM_TO_ASCII_TABLE_SIZE = sizeof(gsm_to_ascii) / sizeof(gsm_to_ascii[0]);
 
-AT_CellularSMS::AT_CellularSMS(ATHandler &at) : AT_CellularBase(at), _cb(0), _mode(CellularSMSMmodeText),
-    _use_8bit_encoding(false), _sim_wait_time(0), _sms_message_ref_number(1), _sms_info(NULL)
+AT_CellularSMS::AT_CellularSMS(ATHandler &at, AT_CellularDevice &device) : _cb(), _mode(CellularSMSMmodeText),
+    _use_8bit_encoding(false), _sim_wait_time(0), _sms_message_ref_number(1),
+    _sms_info(NULL), _at(at), _device(device)
 {
 }
 
@@ -211,7 +214,7 @@ void AT_CellularSMS::cmti_urc()
 
 nsapi_error_t AT_CellularSMS::set_cnmi()
 {
-    if (!get_property(PROPERTY_AT_CNMI)) {
+    if (!_device.get_property(AT_CellularDevice::PROPERTY_AT_CNMI)) {
         return NSAPI_ERROR_UNSUPPORTED;
     }
 
@@ -220,7 +223,7 @@ nsapi_error_t AT_CellularSMS::set_cnmi()
 
 nsapi_error_t AT_CellularSMS::set_cmgf(int msg_format)
 {
-    if (!get_property(PROPERTY_AT_CMGF)) {
+    if (!_device.get_property(AT_CellularDevice::PROPERTY_AT_CMGF)) {
         return NSAPI_ERROR_UNSUPPORTED;
     }
 
@@ -229,7 +232,7 @@ nsapi_error_t AT_CellularSMS::set_cmgf(int msg_format)
 
 nsapi_error_t AT_CellularSMS::set_csmp(int fo, int vp, int pid, int dcs)
 {
-    if (!get_property(PROPERTY_AT_CSMP)) {
+    if (!_device.get_property(AT_CellularDevice::PROPERTY_AT_CSMP)) {
         return NSAPI_ERROR_UNSUPPORTED;
     }
 
@@ -238,7 +241,7 @@ nsapi_error_t AT_CellularSMS::set_csmp(int fo, int vp, int pid, int dcs)
 
 nsapi_error_t AT_CellularSMS::set_csdh(int show_header)
 {
-    if (!get_property(PROPERTY_AT_CSDH)) {
+    if (!_device.get_property(AT_CellularDevice::PROPERTY_AT_CSDH)) {
         return NSAPI_ERROR_UNSUPPORTED;
     }
 
@@ -1114,7 +1117,7 @@ int AT_CellularSMS::compare_time_strings(const char *time_string_1, const char *
     int retVal = -2;
 
     if (success) {
-        double diff = difftime(t1, t2);
+        time_t diff = t1 - t2;
 
         if (diff > 0) {
             retVal = 1;
@@ -1140,7 +1143,7 @@ bool AT_CellularSMS::create_time(const char *time_string, time_t *time)
                &time_struct.tm_hour, &time_struct.tm_min, &time_struct.tm_sec, &sign, &gmt) == kNumberOfElements) {
         *time = mktime(&time_struct);
         // add timezone as seconds. gmt is in quarter of hours.
-        int x = 60 * 60 * gmt * 0.25;
+        int x = (60 / 4) * 60 * gmt;
         if (sign == '+') {
             *time += x;
         } else {
@@ -1248,3 +1251,5 @@ uint16_t AT_CellularSMS::unpack_7_bit_gsm_to_str(const char *str, int len, char 
 
     return decodedCount;
 }
+
+#endif //MBED_CONF_CELLULAR_USE_SMS

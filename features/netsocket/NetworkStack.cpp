@@ -24,15 +24,19 @@
 
 // Default NetworkStack operations
 
-const char *NetworkStack::get_ip_address()
+nsapi_error_t NetworkStack::get_ip_address(SocketAddress *address)
 {
-    return 0;
+    return NSAPI_ERROR_UNSUPPORTED;
 }
 
-const char *NetworkStack::get_ip_address_if(const char *interface_name)
+nsapi_error_t NetworkStack::get_ipv6_link_local_address(SocketAddress *address)
 {
-    return 0;
+    return NSAPI_ERROR_UNSUPPORTED;
+}
 
+nsapi_error_t NetworkStack::get_ip_address_if(SocketAddress *address, const char *interface_name)
+{
+    return NSAPI_ERROR_UNSUPPORTED;
 }
 
 nsapi_error_t NetworkStack::gethostbyname(const char *name, SocketAddress *address, nsapi_version_t version, const char *interface_name)
@@ -54,12 +58,46 @@ nsapi_error_t NetworkStack::gethostbyname(const char *name, SocketAddress *addre
     // ip address of the underlying stack
     if (version == NSAPI_UNSPEC) {
         SocketAddress testaddress;
-        if (testaddress.set_ip_address(this->get_ip_address())) {
+        if (this->get_ip_address(&testaddress) == NSAPI_ERROR_OK) {
             version = testaddress.get_ip_version();
         }
     }
 
     return nsapi_dns_query(this, name, address, interface_name, version);
+}
+
+nsapi_value_or_error_t NetworkStack::getaddrinfo(const char *hostname, SocketAddress *hints, SocketAddress **res, const char *interface_name)
+{
+    int i;
+    if (hostname[0] == '\0') {
+        return NSAPI_ERROR_PARAMETER;
+    }
+    nsapi_version_t version = hints->get_ip_version();
+    // if the version is unspecified, try to guess the version from the
+    // ip address of the underlying stack
+    if (version == NSAPI_UNSPEC) {
+        SocketAddress testaddress;
+        if (this->get_ip_address(&testaddress) == NSAPI_ERROR_OK) {
+            version = testaddress.get_ip_version();
+        }
+    }
+
+    SocketAddress *temp = new (std::nothrow) SocketAddress [MBED_CONF_NSAPI_DNS_ADDRESSES_LIMIT];
+
+    if (!temp) {
+        return NSAPI_ERROR_NO_MEMORY;
+    }
+
+    int adr_cnt = nsapi_dns_query_multiple(this, hostname, temp, MBED_CONF_NSAPI_DNS_ADDRESSES_LIMIT, interface_name, version);
+
+    if (adr_cnt > 0) {
+        *res = new (std::nothrow) SocketAddress [adr_cnt];
+        for (i = 0;  i < adr_cnt; i++) {
+            (*res)[i] = temp[i];
+        }
+    }
+    delete[] temp;
+    return adr_cnt;
 }
 
 nsapi_value_or_error_t NetworkStack::gethostbyname_async(const char *name, hostbyname_cb_t callback, nsapi_version_t version, const char *interface_name)
@@ -76,7 +114,7 @@ nsapi_value_or_error_t NetworkStack::gethostbyname_async(const char *name, hostb
             return NSAPI_ERROR_DNS_FAILURE;
         }
 
-        callback(NSAPI_ERROR_OK, &address);
+        callback(1, &address);
         return NSAPI_ERROR_OK;
     }
 
@@ -84,7 +122,7 @@ nsapi_value_or_error_t NetworkStack::gethostbyname_async(const char *name, hostb
     // ip address of the underlying stack
     if (version == NSAPI_UNSPEC) {
         SocketAddress testaddress;
-        if (testaddress.set_ip_address(this->get_ip_address())) {
+        if (this->get_ip_address(&testaddress) == NSAPI_ERROR_OK) {
             version = testaddress.get_ip_version();
         }
     }
@@ -94,6 +132,27 @@ nsapi_value_or_error_t NetworkStack::gethostbyname_async(const char *name, hostb
     return nsapi_dns_query_async(this, name, callback, call_in_cb, interface_name, version);
 }
 
+nsapi_value_or_error_t NetworkStack::getaddrinfo_async(const char *hostname, SocketAddress *hints, hostbyname_cb_t callback, const char *interface_name)
+{
+    SocketAddress address;
+
+    if (hostname[0] == '\0') {
+        return NSAPI_ERROR_PARAMETER;
+    }
+    nsapi_version_t version = hints->get_ip_version();
+    // if the version is unspecified, try to guess the version from the
+    // ip address of the underlying stack
+    if (version == NSAPI_UNSPEC) {
+        SocketAddress testaddress;
+        if (this->get_ip_address(&testaddress) == NSAPI_ERROR_OK) {
+            version = testaddress.get_ip_version();
+        }
+    }
+
+    call_in_callback_cb_t call_in_cb = get_call_in_callback();
+
+    return nsapi_dns_query_multiple_async(this, hostname, callback, MBED_CONF_NSAPI_DNS_ADDRESSES_LIMIT, call_in_cb, interface_name, version);
+}
 nsapi_error_t NetworkStack::gethostbyname_async_cancel(int id)
 {
     return nsapi_dns_query_async_cancel(id);

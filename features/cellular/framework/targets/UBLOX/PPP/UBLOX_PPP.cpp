@@ -21,32 +21,41 @@
 using namespace mbed;
 using namespace events;
 
-#ifdef TARGET_UBLOX_C027
-static const intptr_t cellular_properties[AT_CellularBase::PROPERTY_MAX] = {
+#ifdef UBX_MDM_SARA_R41XM
+static const intptr_t cellular_properties[AT_CellularDevice::PROPERTY_MAX] = {
     AT_CellularNetwork::RegistrationModeDisable,// C_EREG
     AT_CellularNetwork::RegistrationModeLAC,    // C_GREG
     AT_CellularNetwork::RegistrationModeLAC,    // C_REG
     0,  // AT_CGSN_WITH_TYPE
-    1,  // AT_CGDATA
-    1,  // AT_CGAUTH
+    0,  // AT_CGDATA
+    0,  // AT_CGAUTH
     1,  // AT_CNMI
     1,  // AT_CSMP
     1,  // AT_CMGF
-    1,  // AT_CSDH
+    0,  // AT_CSDH
     1,  // PROPERTY_IPV4_STACK
     0,  // PROPERTY_IPV6_STACK
     0,  // PROPERTY_IPV4V6_STACK
     0,  // PROPERTY_NON_IP_PDP_TYPE
     1,  // PROPERTY_AT_CGEREP
+    1,  // PROPERTY_AT_COPS_FALLBACK_AUTO
+    0,  // PROPERTY_SOCKET_COUNT
+    0,  // PROPERTY_IP_TCP
+    0,  // PROPERTY_IP_UDP
+    0,  // PROPERTY_AT_SEND_DELAY
 };
-#else
-static const intptr_t cellular_properties[AT_CellularBase::PROPERTY_MAX] = {
+#elif defined(UBX_MDM_SARA_U2XX) || defined(UBX_MDM_SARA_G3XX)
+static const intptr_t cellular_properties[AT_CellularDevice::PROPERTY_MAX] = {
     AT_CellularNetwork::RegistrationModeDisable,// C_EREG
     AT_CellularNetwork::RegistrationModeLAC,    // C_GREG
     AT_CellularNetwork::RegistrationModeLAC,    // C_REG
+#ifdef UBX_MDM_SARA_G3XX
+    0,  // AT_CGSN_WITH_TYPE
+#else
     1,  // AT_CGSN_WITH_TYPE
+#endif
     1,  // AT_CGDATA
-    1,  // AT_CGAUTH
+    0,  // AT_CGAUTH
     1,  // AT_CNMI
     1,  // AT_CSMP
     1,  // AT_CMGF
@@ -56,12 +65,40 @@ static const intptr_t cellular_properties[AT_CellularBase::PROPERTY_MAX] = {
     0,  // PROPERTY_IPV4V6_STACK
     0,  // PROPERTY_NON_IP_PDP_TYPE
     1,  // PROPERTY_AT_CGEREP
+    1,  // PROPERTY_AT_COPS_FALLBACK_AUTO
+    0,  // PROPERTY_SOCKET_COUNT
+    0,  // PROPERTY_IP_TCP
+    0,  // PROPERTY_IP_UDP
+    0,  // PROPERTY_AT_SEND_DELAY
+};
+#else
+static const intptr_t cellular_properties[AT_CellularDevice::PROPERTY_MAX] = {
+    0,  // C_EREG
+    0,  // C_GREG
+    0,  // C_REG
+    0,  // AT_CGSN_WITH_TYPE
+    0,  // AT_CGDATA
+    0,  // AT_CGAUTH
+    0,  // AT_CNMI
+    0,  // AT_CSMP
+    0,  // AT_CMGF
+    0,  // AT_CSDH
+    0,  // PROPERTY_IPV4_STACK
+    0,  // PROPERTY_IPV6_STACK
+    0,  // PROPERTY_IPV4V6_STACK
+    0,  // PROPERTY_NON_IP_PDP_TYPE
+    0,  // PROPERTY_AT_CGEREP
+    0,  // PROPERTY_AT_COPS_FALLBACK_AUTO
+    0,  // PROPERTY_SOCKET_COUNT
+    0,  // PROPERTY_IP_TCP
+    0,  // PROPERTY_IP_UDP
+    0,  // PROPERTY_AT_SEND_DELAY
 };
 #endif
 
 UBLOX_PPP::UBLOX_PPP(FileHandle *fh) : AT_CellularDevice(fh)
 {
-    AT_CellularBase::set_cellular_properties(cellular_properties);
+    set_cellular_properties(cellular_properties);
 }
 
 #if MBED_CONF_UBLOX_PPP_PROVIDE_DEFAULT
@@ -70,11 +107,11 @@ UBLOX_PPP::UBLOX_PPP(FileHandle *fh) : AT_CellularDevice(fh)
 #error Must define lwip.ppp-enabled
 #endif
 
-#include "UARTSerial.h"
+#include "drivers/BufferedSerial.h"
 CellularDevice *CellularDevice::get_default_instance()
 {
-    static UARTSerial serial(MBED_CONF_UBLOX_PPP_TX, MBED_CONF_UBLOX_PPP_RX, MBED_CONF_UBLOX_PPP_BAUDRATE);
-#if defined (MBED_CONF_UBLOX_AT_RTS) && defined(MBED_CONF_UBLOX_AT_CTS)
+    static BufferedSerial serial(MBED_CONF_UBLOX_PPP_TX, MBED_CONF_UBLOX_PPP_RX, MBED_CONF_UBLOX_PPP_BAUDRATE);
+#if defined (MBED_CONF_UBLOX_PPP_RTS) && defined(MBED_CONF_UBLOX_PPP_CTS)
     tr_debug("UBLOX_PPP flow control: RTS %d CTS %d", MBED_CONF_UBLOX_PPP_RTS, MBED_CONF_UBLOX_PPP_CTS);
     serial.set_flow_control(SerialBase::RTSCTS, MBED_CONF_UBLOX_PPP_RTS, MBED_CONF_UBLOX_PPP_CTS);
 #endif

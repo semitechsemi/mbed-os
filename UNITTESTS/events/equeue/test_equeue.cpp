@@ -45,7 +45,10 @@ static void pass_func(void *eh)
 
 static void simple_func(void *p)
 {
-    (*(reinterpret_cast<uint8_t *>(p)))++;
+    uint8_t *d = reinterpret_cast<uint8_t *>(p);
+    if (*d < 255) {
+        (*d)++;
+    }
 }
 
 static void sloth_func(void *p)
@@ -136,11 +139,64 @@ static void *multithread_thread(void *p)
     return 0;
 }
 
+class ecount {
+    mutable pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    uint8_t count;
+public:
+    ecount() : count(0)
+    {
+        int err = pthread_mutex_init(&mutex, NULL);
+        EXPECT_EQ(0, err);
+        err = pthread_cond_init(&cond, NULL);
+        EXPECT_EQ(0, err);
+    }
+
+    ~ecount()
+    {
+        int err = pthread_mutex_destroy(&mutex);
+        EXPECT_EQ(0, err);
+        err = pthread_cond_destroy(&cond);
+        EXPECT_EQ(0, err);
+    }
+
+    void lock() const
+    {
+        int err = pthread_mutex_lock(&mutex);
+        EXPECT_EQ(0, err);
+    }
+
+    void unlock() const
+    {
+        int err = pthread_mutex_unlock(&mutex);
+        EXPECT_EQ(0, err);
+    }
+
+    void touch()
+    {
+        lock();
+        if (count < 200) {
+            count++;
+        }
+        unlock();
+        int err = pthread_cond_broadcast(&cond);
+        EXPECT_EQ(0, err);
+    }
+
+    void wait_for_touches(uint8_t n)
+    {
+        lock();
+        while (count < n) {
+            int err = pthread_cond_wait(&cond, &mutex);
+            EXPECT_EQ(0, err);
+        }
+        unlock();
+    }
+};
+
 static void multithread_func(void *p)
 {
-    if ((*(reinterpret_cast<uint8_t *>(p))) < 200) {
-        (*(reinterpret_cast<uint8_t *>(p)))++;
-    }
+    static_cast<ecount *>(p)->touch();
 }
 
 static void background_func(void *p, int ms)
@@ -662,19 +718,17 @@ TEST_F(TestEqueue, test_equeue_multithread)
     int err = equeue_create(&q, TEST_EQUEUE_SIZE);
     ASSERT_EQ(0, err);
 
-    uint8_t touched = 0;
-    equeue_call_every(&q, 1, multithread_func, &touched);
+    ecount t;
+    equeue_call_every(&q, 1, multithread_func, &t);
 
     pthread_t thread;
     err = pthread_create(&thread, 0, multithread_thread, &q);
     ASSERT_EQ(0, err);
 
-    usleep(10000);
+    t.wait_for_touches(1);
     equeue_break(&q);
     err = pthread_join(thread, 0);
     ASSERT_EQ(0, err);
-
-    EXPECT_TRUE(touched > 1);
 
     equeue_destroy(&q);
 }
@@ -762,8 +816,8 @@ TEST_F(TestEqueue, test_equeue_chain)
     EXPECT_EQ(3, touched1);
     EXPECT_EQ(3, touched2);
 
-    equeue_destroy(&q1);
     equeue_destroy(&q2);
+    equeue_destroy(&q1);
 }
 
 /** Test that unchaining equeues makes them work on their own.
@@ -993,5 +1047,64 @@ TEST_F(TestEqueue, test_equeue_sibling)
     equeue_cancel(&q, id0);
     equeue_cancel(&q, id1);
     equeue_cancel(&q, id2);
+    equeue_destroy(&q);
+}
+
+/** Test that equeue executes user allocated events passed by equeue_post.
+ *
+ *  Given queue is initialized and its size is set to store one event at max in its internal memory.
+ *  When post events allocated in queues internal memory (what is done by calling equeue_call).
+ *  Then only one event can be posted due to queue memory size.
+ *  When post user allocated events.
+ *  Then number of posted events is not limited by queue memory size.
+ *  When both queue allocaded and user allocated events are posted and equeue_dispatch is called.
+ *  Then both types of events are executed properly.
+ */
+TEST_F(TestEqueue, test_equeue_user_allocated_event_post)
+{
+    struct user_allocated_event {
+        struct equeue_event e;
+        uint8_t touched;
+    };
+    equeue_t q;
+    int err = equeue_create(&q, EQUEUE_EVENT_SIZE);
+    ASSERT_EQ(0, err);
+
+    uint8_t touched = 0;
+    user_allocated_event e1 = { { 0, 0, 0, NULL, NULL, NULL, 0, -1, NULL, NULL }, 0 };
+    user_allocated_event e2 = { { 0, 0, 0, NULL, NULL, NULL, 1, -1, NULL, NULL }, 0 };
+    user_allocated_event e3 = { { 0, 0, 0, NULL, NULL, NULL, 1, -1, NULL, NULL }, 0 };
+    user_allocated_event e4 = { { 0, 0, 0, NULL, NULL, NULL, 1, -1, NULL, NULL }, 0 };
+    user_allocated_event e5 = { { 0, 0, 0, NULL, NULL, NULL, 0, -1, NULL, NULL }, 0 };
+
+    EXPECT_NE(0, equeue_call(&q, simple_func, &touched));
+    EXPECT_EQ(0, equeue_call(&q, simple_func, &touched));
+    EXPECT_EQ(0, equeue_call(&q, simple_func, &touched));
+
+    equeue_post_user_allocated(&q, simple_func, &e1.e);
+    equeue_post_user_allocated(&q, simple_func, &e2.e);
+    equeue_post_user_allocated(&q, simple_func, &e3.e);
+    equeue_post_user_allocated(&q, simple_func, &e4.e);
+    equeue_post_user_allocated(&q, simple_func, &e5.e);
+    equeue_cancel_user_allocated(&q, &e3.e);
+
+    equeue_dispatch(&q, 1);
+
+    EXPECT_EQ(1, touched);
+    EXPECT_EQ(1, e1.touched);
+    EXPECT_EQ(1, e2.touched);
+    EXPECT_EQ(0, e3.touched);
+    EXPECT_EQ(1, e4.touched);
+    EXPECT_EQ(1, e5.touched);
+
+    equeue_dispatch(&q, 10);
+
+    EXPECT_EQ(1, touched);
+    EXPECT_EQ(1, e1.touched);
+    EXPECT_EQ(1, e2.touched);
+    EXPECT_EQ(0, e3.touched);
+    EXPECT_EQ(1, e4.touched);
+    EXPECT_EQ(1, e5.touched);
+
     equeue_destroy(&q);
 }

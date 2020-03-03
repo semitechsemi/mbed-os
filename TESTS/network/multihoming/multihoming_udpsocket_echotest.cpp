@@ -54,6 +54,7 @@ static void _sigio_handler(osThreadId id)
 
 void MULTIHOMING_UDPSOCKET_ECHOTEST()
 {
+    nsapi_dns_reset();
 
     for (unsigned int interface_index = 0; interface_index < MBED_CONF_MULTIHOMING_MAX_INTERFACES_NUM; interface_index++) {
         NetworkInterface  *interface = get_interface(interface_index);
@@ -66,7 +67,7 @@ void MULTIHOMING_UDPSOCKET_ECHOTEST()
 
         UDPSocket sock;
         TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.open(interface));
-        for (unsigned int j = 0; j < interface_num; j++) {
+        for (int j = 0; j < interface_num; j++) {
             int recvd;
             int sent;
             int s_idx = 0;
@@ -83,7 +84,7 @@ void MULTIHOMING_UDPSOCKET_ECHOTEST()
                         packets_sent++;
                     }
                     if (sent != pkt_s) {
-                        printf("[Round#%02d - Sender] error, returned %d\n", s_idx, sent);
+                        tr_warn("[Round#%02d - Sender] error, returned %d\n", s_idx, sent);
                         continue;
                     }
                     recvd = sock.recvfrom(NULL, rx_buffer, pkt_s);
@@ -98,8 +99,10 @@ void MULTIHOMING_UDPSOCKET_ECHOTEST()
             // Packet loss up to 30% tolerated
             if (packets_sent > 0) {
                 double loss_ratio = 1 - ((double)packets_recv / (double)packets_sent);
-                printf("Interface %s, packets sent: %d, packets received %d, loss ratio %.2lf\r\n", interface_name[j], packets_sent, packets_recv, loss_ratio);
+                tr_warn("Interface %s, packets sent: %d, packets received %d, loss ratio %.2lf\r\n", interface_name[j], packets_sent, packets_recv, loss_ratio);
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERATED_LOSS_RATIO, EXPECTED_LOSS_RATIO, loss_ratio);
+            } else {
+                TEST_FAIL();
             }
         }
         TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.close());
@@ -113,7 +116,7 @@ void udpsocket_echotest_nonblock_receiver(void *receive_bytes)
     for (int retry_cnt = 0; retry_cnt <= RETRIES; retry_cnt++) {
         recvd = sock.recvfrom(NULL, rx_buffer, expt2recv);
         if (recvd == NSAPI_ERROR_WOULD_BLOCK) {
-            wait_ms(WAIT2RECV_TIMEOUT);
+            ThisThread::sleep_for(WAIT2RECV_TIMEOUT);
             --retry_cnt;
             continue;
         } else if (recvd == expt2recv) {
@@ -144,7 +147,7 @@ void MULTIHOMING_UDPSOCKET_ECHOTEST_NONBLOCK()
         TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.open(interface));
         sock.set_blocking(false);
         sock.sigio(callback(_sigio_handler, ThisThread::get_id()));
-        for (unsigned int j = 0; j < interface_num; j++) {
+        for (int j = 0; j < interface_num; j++) {
             int s_idx = 0;
             int packets_sent = 0;
             int packets_recv = 0;
@@ -176,7 +179,7 @@ void MULTIHOMING_UDPSOCKET_ECHOTEST_NONBLOCK()
                         }
                         --retry_cnt;
                     } else if (sent != pkt_s) {
-                        printf("[Round#%02d - Sender] error, returned %d\n", s_idx, sent);
+                        tr_warn("[Round#%02d - Sender] error, returned %d\n", s_idx, sent);
                         continue;
                     }
                     if (!tx_sem.try_acquire_for(WAIT2RECV_TIMEOUT * 2)) { // RX might wait up to WAIT2RECV_TIMEOUT before recvfrom
@@ -195,7 +198,7 @@ void MULTIHOMING_UDPSOCKET_ECHOTEST_NONBLOCK()
             // Packet loss up to 30% tolerated
             if (packets_sent > 0) {
                 double loss_ratio = 1 - ((double)packets_recv / (double)packets_sent);
-                printf("Interface %s, Packets sent: %d, packets received %d, loss ratio %.2lf\r\n", interface_name[j], packets_sent, packets_recv, loss_ratio);
+                tr_info("Interface %s, Packets sent: %d, packets received %d, loss ratio %.2lf\r\n", interface_name[j], packets_sent, packets_recv, loss_ratio);
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERATED_LOSS_RATIO, EXPECTED_LOSS_RATIO, loss_ratio);
 
 #if MBED_CONF_NSAPI_SOCKET_STATS_ENABLED
@@ -208,10 +211,12 @@ void MULTIHOMING_UDPSOCKET_ECHOTEST_NONBLOCK()
                     }
                 }
                 loss_ratio = 1 - ((double)udp_stats[j].recv_bytes / (double)udp_stats[j].sent_bytes);
-                printf("Bytes sent: %d, bytes received %d, loss ratio %.2lf\r\n", udp_stats[j].sent_bytes, udp_stats[j].recv_bytes, loss_ratio);
+                tr_info("Bytes sent: %d, bytes received %d, loss ratio %.2lf\r\n", udp_stats[j].sent_bytes, udp_stats[j].recv_bytes, loss_ratio);
                 TEST_ASSERT_DOUBLE_WITHIN(TOLERATED_LOSS_RATIO, EXPECTED_LOSS_RATIO, loss_ratio);
 
 #endif
+            } else {
+                TEST_FAIL();
             }
         }
         TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.close());

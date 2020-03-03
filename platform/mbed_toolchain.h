@@ -1,12 +1,3 @@
-
-/** \ingroup mbed-os-public */
-/** \addtogroup platform-public-api */
-/** @{*/
-/**
- * \defgroup platform_toolchain Toolchain functions
- * @{
- */
-
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2019 ARM Limited
  * SPDX-License-Identifier: Apache-2.0
@@ -37,6 +28,13 @@
 #warning "This compiler is not yet supported."
 #endif
 
+/** \addtogroup platform-public-api */
+/** @{*/
+
+/**
+ * \defgroup platform_toolchain Toolchain functions
+ * @{
+ */
 
 // Attributes
 
@@ -339,6 +337,44 @@
 #define MBED_UNREACHABLE __builtin_unreachable()
 #else
 #define MBED_UNREACHABLE while (1)
+#endif
+#endif
+
+/** MBED_FALLTHROUGH
+ *  Marks a point in a switch statement where fallthrough can occur.
+ *  Should be placed as the last statement before a label.
+ *
+ *  @code
+ *  #include "mbed_toolchain.h"
+ *
+ *  int foo(int arg) {
+ *      switch (arg) {
+ *          case 1:
+ *          case 2:
+ *          case 3:
+ *              arg *= 2;
+ *              MBED_FALLTHROUGH;
+ *          default:
+ *              return arg;
+ *      }
+ *  }
+ *  @endcode
+ */
+#ifndef MBED_FALLTHROUGH
+#if __cplusplus >= 201703
+#define MBED_FALLTHROUGH [[fallthrough]]
+#elif defined(__clang__)
+#if __cplusplus >= 201103
+#define MBED_FALLTHROUGH [[clang::fallthrough]]
+#elif __has_attribute(fallthrough)
+#define MBED_FALLTHROUGH __attribute__((fallthrough))
+#else
+#define MBED_FALLTHROUGH
+#endif
+#elif defined (__GNUC__) && !defined(__CC_ARM)
+#define MBED_FALLTHROUGH __attribute__((fallthrough))
+#else
+#define MBED_FALLTHROUGH
 #endif
 #endif
 

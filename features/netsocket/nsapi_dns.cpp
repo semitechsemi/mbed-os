@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include "mbed_shared_queues.h"
 #include "events/EventQueue.h"
 #include "OnboardNetworkStack.h"
@@ -43,12 +44,16 @@
 #define DNS_QUERY_QUEUE_SIZE 5
 #define DNS_HOST_NAME_MAX_LEN 255
 #define DNS_TIMER_TIMEOUT 100
+#if !defined(MIN)
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
 
 struct DNS_CACHE {
-    nsapi_addr_t address;
+    nsapi_addr_t *address;
     char *host;
     uint64_t expires;      /*!< time to live in milliseconds */
     uint64_t accessed;     /*!< last accessed */
+    uint8_t count;         /*!< number of IP addresses */
 };
 
 struct SOCKET_CB_DATA {
@@ -63,7 +68,7 @@ enum dns_state {
 };
 
 struct DNS_QUERY {
-    int unique_id;
+    intptr_t unique_id;
     nsapi_error_t status;
     NetworkStack *stack;
     char *host;
@@ -87,13 +92,14 @@ struct DNS_QUERY {
     dns_state state;
 };
 
-static void nsapi_dns_cache_add(const char *host, nsapi_addr_t *address, uint32_t ttl);
+static void nsapi_dns_cache_add(const char *host, nsapi_addr_t *address, uint32_t ttl, uint8_t count);
 static nsapi_size_or_error_t nsapi_dns_cache_find(const char *host, nsapi_version_t version, nsapi_addr_t *address);
+static void nsapi_dns_cache_reset();
 
 static nsapi_error_t nsapi_dns_get_server_addr(NetworkStack *stack, uint8_t *index, uint8_t *total_attempts, uint8_t *send_success, SocketAddress *dns_addr, const char *interface_name);
 
 static void nsapi_dns_query_async_create(void *ptr);
-static nsapi_error_t nsapi_dns_query_async_delete(int unique_id);
+static nsapi_error_t nsapi_dns_query_async_delete(intptr_t unique_id);
 static void nsapi_dns_query_async_send(void *ptr);
 static void nsapi_dns_query_async_timeout(void);
 static void nsapi_dns_query_async_resp(DNS_QUERY *query, nsapi_error_t status, SocketAddress *address);
@@ -121,7 +127,7 @@ static SingletonPtr<PlatformMutex> dns_cache_mutex;
 #endif
 
 static uint16_t dns_message_id = 1;
-static int dns_unique_id = 1;
+static intptr_t dns_unique_id = 1;
 static DNS_QUERY *dns_query_queue[DNS_QUERY_QUEUE_SIZE];
 // Protects from several threads running asynchronous DNS
 static SingletonPtr<PlatformMutex> dns_mutex;
@@ -317,7 +323,7 @@ static int dns_scan_response(const uint8_t *ptr, uint16_t exp_id, uint32_t *ttl,
     return count;
 }
 
-static void nsapi_dns_cache_add(const char *host, nsapi_addr_t *address, uint32_t ttl)
+static void nsapi_dns_cache_add(const char *host, nsapi_addr_t *address, uint32_t ttl, uint8_t count)
 {
 #if (MBED_CONF_NSAPI_DNS_CACHE_SIZE > 0)
     // RFC 1034: if TTL is zero, entry is not added to cache
@@ -356,10 +362,15 @@ static void nsapi_dns_cache_add(const char *host, nsapi_addr_t *address, uint32_
         dns_cache[index] = new (std::nothrow) DNS_CACHE;
     } else {
         delete dns_cache[index]->host;
+        delete dns_cache[index]->address;
     }
 
     if (dns_cache[index]) {
-        dns_cache[index]->address = *address;
+        dns_cache[index]->address = new (std::nothrow) nsapi_addr_t[count];
+        for (int i = 0; i < count; i++) {
+            dns_cache[index]->address[i] = address[i];
+        }
+        dns_cache[index]->count = count;
         dns_cache[index]->host = new (std::nothrow) char[strlen(host) + 1];
         strcpy(dns_cache[index]->host, host);
         uint64_t ms_count = rtos::Kernel::get_ms_count();
@@ -371,7 +382,7 @@ static void nsapi_dns_cache_add(const char *host, nsapi_addr_t *address, uint32_
 #endif
 }
 
-static nsapi_error_t nsapi_dns_cache_find(const char *host, nsapi_version_t version, nsapi_addr_t *address)
+static nsapi_size_or_error_t nsapi_dns_cache_find(const char *host, nsapi_version_t version, nsapi_addr_t *address)
 {
     nsapi_error_t ret_val = NSAPI_ERROR_NO_ADDRESS;
 
@@ -386,13 +397,17 @@ static nsapi_error_t nsapi_dns_cache_find(const char *host, nsapi_version_t vers
                 delete dns_cache[i]->host;
                 delete dns_cache[i];
                 dns_cache[i] = NULL;
-            } else if ((version == NSAPI_UNSPEC || version == dns_cache[i]->address.version) &&
+            } else if ((version == NSAPI_UNSPEC || version == dns_cache[i]->address[0].version) && //only first IP address version check, others have the same version
                        strcmp(dns_cache[i]->host, host) == 0) {
                 if (address) {
-                    *address = dns_cache[i]->address;
+                    ret_val = 0;
+                    for (int count = 0; count < dns_cache[i]->count; count++) {
+                        address[count] = dns_cache[i]->address[count];
+                        ret_val++;
+                    }
                 }
                 dns_cache[i]->accessed = ms_count;
-                ret_val = NSAPI_ERROR_OK;
+
             }
         }
     }
@@ -401,6 +416,23 @@ static nsapi_error_t nsapi_dns_cache_find(const char *host, nsapi_version_t vers
 #endif
 
     return ret_val;
+}
+
+static void nsapi_dns_cache_reset()
+{
+#if (MBED_CONF_NSAPI_DNS_CACHE_SIZE > 0)
+    dns_cache_mutex->lock();
+    for (int i = 0; i < MBED_CONF_NSAPI_DNS_CACHE_SIZE; i++) {
+        if (dns_cache[i]) {
+            delete[] dns_cache[i]->host;
+            dns_cache[i]->host = NULL;
+            delete[] dns_cache[i]->address;
+            delete dns_cache[i];
+            dns_cache[i] = NULL;
+        }
+    }
+    dns_cache_mutex->unlock();
+#endif
 }
 
 static nsapi_error_t nsapi_dns_get_server_addr(NetworkStack *stack, uint8_t *index, uint8_t *total_attempts, uint8_t *send_success, SocketAddress *dns_addr, const char *interface_name)
@@ -450,10 +482,16 @@ static nsapi_size_or_error_t nsapi_dns_query_multiple(NetworkStack *stack, const
     }
 
     // check cache
-    if (nsapi_dns_cache_find(host, version, addr) == NSAPI_ERROR_OK) {
-        return 1;
+    nsapi_addr *tmp = new (std::nothrow) nsapi_addr_t [MBED_CONF_NSAPI_DNS_ADDRESSES_LIMIT];
+    int cached = nsapi_dns_cache_find(host, version, tmp);
+    if (cached > 0) {
+        for (int i = 0;  i < MIN(cached, addr_count); i++) {
+            addr[i] = tmp[i];
+        }
+        delete [] tmp;
+        return MIN(cached, addr_count);
     }
-
+    delete [] tmp;
     // create a udp socket
     UDPSocket socket;
     int err = socket.open(stack);
@@ -487,8 +525,13 @@ static nsapi_size_or_error_t nsapi_dns_query_multiple(NetworkStack *stack, const
             break;
         }
 
+        if (version != NSAPI_UNSPEC && (dns_addr.get_ip_version() != version)) {
+            retries = MBED_CONF_NSAPI_DNS_RETRIES;
+            index++;
+            continue;
+        }
         // send the question
-        int len = dns_append_question(packet, 1, host, version);
+        int len = dns_append_question(packet, 1, host, dns_addr.get_ip_version());
 
         err = socket.sendto(dns_addr, packet, len);
         // send may fail for various reasons, including wrong address type - move on
@@ -526,7 +569,7 @@ static nsapi_size_or_error_t nsapi_dns_query_multiple(NetworkStack *stack, const
         uint32_t ttl;
         int resp = dns_scan_response(response, 1, &ttl, addr, addr_count);
         if (resp > 0) {
-            nsapi_dns_cache_add(host, addr, ttl);
+            nsapi_dns_cache_add(host, addr, ttl, resp);
             result = resp;
         } else if (resp < 0) {
             continue;
@@ -561,6 +604,11 @@ nsapi_size_or_error_t nsapi_dns_query_multiple(NetworkStack *stack, const char *
                                                SocketAddress *addresses, nsapi_size_t addr_count, const char *interface_name, nsapi_version_t version)
 {
     nsapi_addr_t *addrs = new (std::nothrow) nsapi_addr_t[addr_count];
+
+    if (!addrs) {
+        return NSAPI_ERROR_NO_MEMORY;
+    }
+
     nsapi_size_or_error_t result = nsapi_dns_query_multiple(stack, host, addrs, addr_count, interface_name, version);
 
     if (result > 0) {
@@ -618,6 +666,13 @@ void nsapi_dns_call_in_set(call_in_callback_cb_t callback)
     *dns_call_in.get() = callback;
 }
 
+void nsapi_dns_reset()
+{
+    nsapi_dns_cache_reset();
+    dns_message_id = 1;
+    dns_unique_id = 1;
+}
+
 nsapi_error_t nsapi_dns_call_in(call_in_callback_cb_t cb, int delay, mbed::Callback<void()> func)
 {
     if (*dns_call_in.get()) {
@@ -645,14 +700,32 @@ nsapi_value_or_error_t nsapi_dns_query_multiple_async(NetworkStack *stack, const
         return NSAPI_ERROR_PARAMETER;
     }
 
-    nsapi_addr address;
-    if (nsapi_dns_cache_find(host, version, &address) == NSAPI_ERROR_OK) {
-        SocketAddress addr(address);
-        dns_mutex->unlock();
-        callback(NSAPI_ERROR_OK, &addr);
-        return NSAPI_ERROR_OK;
-    }
+    nsapi_addr *address = new (std::nothrow) nsapi_addr_t [MBED_CONF_NSAPI_DNS_ADDRESSES_LIMIT];
+    int cached = nsapi_dns_cache_find(host, version, address);
+    if (!addr_count) {
+        if (cached > 0) {
+            SocketAddress addr(*address);
+            dns_mutex->unlock();
+            callback(1, &addr);
+            delete[] address;
+            return NSAPI_ERROR_OK;
+        }
 
+    } else {
+
+        if (cached > 0) {
+            SocketAddress *addr  = new (std::nothrow) SocketAddress [cached];
+            for (int i = 0;  i < cached; i++) {
+                addr[i].set_addr(address[i]);
+            }
+            dns_mutex->unlock();
+            callback(cached, addr);
+            delete[] address;
+            delete[] addr;
+            return cached;
+        }
+    }
+    delete[] address;
     int index = -1;
 
     for (int i = 0; i < DNS_QUERY_QUEUE_SIZE; i++) {
@@ -726,6 +799,7 @@ nsapi_value_or_error_t nsapi_dns_query_multiple_async(NetworkStack *stack, const
         if (nsapi_dns_call_in(query->call_in_cb, DNS_TIMER_TIMEOUT, mbed::callback(nsapi_dns_query_async_timeout)) != NSAPI_ERROR_OK) {
             delete[] query->host;
             delete query;
+            dns_query_queue[index] = NULL;
             dns_mutex->unlock();
             return NSAPI_ERROR_NO_MEMORY;
         }
@@ -742,7 +816,7 @@ nsapi_value_or_error_t nsapi_dns_query_multiple_async(NetworkStack *stack, const
 
 static void nsapi_dns_query_async_initiate_next(void)
 {
-    int id = INT32_MAX;
+    intptr_t id = INTPTR_MAX;
     DNS_QUERY *query = NULL;
 
     // Trigger next query to start, find one that has been on queue longest
@@ -819,7 +893,7 @@ static void nsapi_dns_query_async_timeout(void)
     dns_mutex->unlock();
 }
 
-nsapi_error_t nsapi_dns_query_async_cancel(int id)
+nsapi_error_t nsapi_dns_query_async_cancel(nsapi_size_or_error_t id)
 {
     dns_mutex->lock();
 
@@ -851,7 +925,7 @@ static void nsapi_dns_query_async_create(void *ptr)
 {
     dns_mutex->lock();
 
-    int unique_id = reinterpret_cast<int>(ptr);
+    intptr_t unique_id = reinterpret_cast<intptr_t>(ptr);
 
     DNS_QUERY *query = NULL;
 
@@ -917,7 +991,7 @@ static void nsapi_dns_query_async_create(void *ptr)
 
 }
 
-static nsapi_error_t nsapi_dns_query_async_delete(int unique_id)
+static nsapi_error_t nsapi_dns_query_async_delete(intptr_t unique_id)
 {
     int index = -1;
     DNS_QUERY *query = NULL;
@@ -953,7 +1027,7 @@ static nsapi_error_t nsapi_dns_query_async_delete(int unique_id)
         delete[] query->addrs;
     }
 
-    delete query->host;
+    delete[] query->host;
     delete query;
     dns_query_queue[index] = NULL;
 
@@ -977,7 +1051,7 @@ static void nsapi_dns_query_async_send(void *ptr)
 {
     dns_mutex->lock();
 
-    int unique_id = reinterpret_cast<int>(ptr);
+    intptr_t unique_id = reinterpret_cast<intptr_t>(ptr);
 
     DNS_QUERY *query = NULL;
 
@@ -1013,9 +1087,6 @@ static void nsapi_dns_query_async_send(void *ptr)
         return;
     }
 
-    // send the question
-    int len = dns_append_question(packet, query->dns_message_id, query->host, query->version);
-
     while (true) {
         SocketAddress dns_addr;
         nsapi_size_or_error_t err = nsapi_dns_get_server_addr(query->stack, &(query->dns_server), &(query->total_attempts), &(query->send_success), &dns_addr, query->interface_name);
@@ -1024,6 +1095,13 @@ static void nsapi_dns_query_async_send(void *ptr)
             free(packet);
             return;
         }
+
+        if (query->version != NSAPI_UNSPEC && dns_addr.get_ip_version() != query->version) {
+            query->dns_server++;
+            continue;
+        }
+        // send the question
+        int len = dns_append_question(packet, query->dns_message_id, query->host, dns_addr.get_ip_version());
 
         err = query->socket->sendto(dns_addr, packet, len);
 
@@ -1139,7 +1217,7 @@ static void nsapi_dns_query_async_response(void *ptr)
 {
     dns_mutex->lock();
 
-    int unique_id = reinterpret_cast<int>(ptr);
+    intptr_t unique_id = reinterpret_cast<intptr_t>(ptr);
 
     DNS_QUERY *query = NULL;
 
@@ -1162,12 +1240,8 @@ static void nsapi_dns_query_async_response(void *ptr)
             }
 
             // Adds address to cache
-            nsapi_dns_cache_add(query->host, &(query->addrs[0]), query->ttl);
-
-            status = NSAPI_ERROR_OK;
-            if (query->addr_count > 0) {
-                status = query->count;
-            }
+            nsapi_dns_cache_add(query->host, &(query->addrs[0]), query->ttl, query->count);
+            status = query->count;
         }
 
         nsapi_dns_query_async_resp(query, status, addresses);

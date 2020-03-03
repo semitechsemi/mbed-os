@@ -1,5 +1,5 @@
 /* ODIN-W2 implementation of WiFiInterface
- * Copyright (c) 2016 u-blox Malmö AB
+ * Copyright (c) 2016 u-blox Malmï¿½ AB
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 #ifndef ODIN_WIFI_INTERFACE_H
 #define ODIN_WIFI_INTERFACE_H
+
+#if MBED_CONF_LWIP_PRESENT
 
 #include "WiFiInterface.h"
 #if DEVICE_WIFI_AP
@@ -63,9 +65,9 @@ class OdinWiFiInterface : public WiFiInterface, public EMACInterface
 public:
     /** OdinWiFiInterface lifetime
      */
-    OdinWiFiInterface(OdinWiFiEMAC &emac = OdinWiFiEMAC::get_instance(), OnboardNetworkStack &stack = OnboardNetworkStack::get_default_instance());
+    OdinWiFiInterface(OdinWiFiEMAC &emac_obj = OdinWiFiEMAC::get_instance(), OnboardNetworkStack &stack = OnboardNetworkStack::get_default_instance());
     
-    OdinWiFiInterface(bool debug, OdinWiFiEMAC &emac = OdinWiFiEMAC::get_instance(), OnboardNetworkStack &stack = OnboardNetworkStack::get_default_instance());
+    OdinWiFiInterface(bool debug, OdinWiFiEMAC &emac_obj = OdinWiFiEMAC::get_instance(), OnboardNetworkStack &stack = OnboardNetworkStack::get_default_instance());
 
     ~OdinWiFiInterface();
     
@@ -338,6 +340,8 @@ private:
 
         nsapi_error_t       error_code;
         uint16_t            beacon_interval;
+
+        cbWLAN_Handle       handle;
     };
 
     struct scan_cache_s {
@@ -430,15 +434,22 @@ private:
     friend struct wlan_callb_s;
 
     Mutex                               _mutex;
-    Queue<odin_wifi_msg_s, 6>           _in_queue;
+    Queue<odin_wifi_msg_s, 10>          _in_queue;
     Queue<odin_wifi_msg_s, 1>           _out_queue;
     Queue<odin_wifi_msg_s, 1>           _cache_queue;
-    MemoryPool<odin_wifi_msg_s, 7>      *_msg_pool;
+    MemoryPool<odin_wifi_msg_s, 11>     *_msg_pool;
     Thread                              _thread;
     Timer                               _timer;
 
     bool    _debug;
     int     _dbg_timeout;
+
+    OdinWiFiEMAC &emac = OdinWiFiEMAC::get_instance();
+
+    // This flag is added to flush the packets that were coming in between while the status was connected hence causing message pool overflow
+    bool flush_drvr_ind_pkts = false;
 };
 
 #endif
+
+#endif // MBED_CONF_LWIP_PRESENT

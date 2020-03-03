@@ -9,7 +9,7 @@
 *
 ********************************************************************************
 * \copyright
-* Copyright 2018-2019 Cypress Semiconductor Corporation
+* Copyright 2018-2020 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,12 +29,27 @@
 * \addtogroup group_hal_uart UART (Universal Asynchronous Receiver-Transmitter)
 * \ingroup group_hal
 * \{
-* High level interface for interacting with the Cypress UART.
+* High level interface for interacting with the Universal Asynchronous Receiver-Transmitter (UART).
 *
-* \defgroup group_hal_uart_macros Macros
-* \defgroup group_hal_uart_functions Functions
-* \defgroup group_hal_uart_data_structures Data Structures
-* \defgroup group_hal_uart_enums Enumerated Types
+* The Universal Asynchronous Receiver/Transmitter (UART) protocol is an
+* asynchronous serial interface protocol. UART communication is typically
+* point-to-point. The UART interface consists of two signals:
+* * TX: Transmitter output
+* * RX: Receiver input
+*
+* Additionally, two side-band signals are used to implement flow control in
+* UART. Note that the flow control applies only to TX functionality.
+* * Clear to Send (CTS): This is an input signal to the transmitter.
+*   When active, it indicates that the slave is ready for the master to
+*   transmit data.
+* * Ready to Send (RTS): This is an output signal from the receiver. When
+*   active, it indicates that the receiver is ready to receive data
+*
+* Flow control can be configured via cyhal_uart_set_flow_control()
+*
+* The data frame size, STOP bits, and parity can be configured via cyhal_uart_cfg_t.
+* The UART contains dedicated hardware buffers for transmit and receive. Optionally,
+* either these can be augmented with a software buffer.
 */
 
 #pragma once
@@ -49,11 +64,6 @@
 extern "C" {
 #endif
 
-/**
-* \addtogroup group_hal_uart_macros
-* \{
-*/
-
 /** The requested resource type is invalid */
 #define CYHAL_UART_RSLT_ERR_INVALID_PIN (CY_RSLT_CREATE(CY_RSLT_TYPE_ERROR, CYHAL_RSLT_MODULE_UART, 0))
 /** Failed to configure power management callback */
@@ -66,13 +76,6 @@ extern "C" {
 #define CYHAL_UART_DEFAULT_BAUD 115200
 /** The maximum allowable difference between baud requested and actual baud **/
 #define CYHAL_UART_MAX_BAUD_PERCENT_DIFFERENCE 10
-/** \} group_hal_uart_macros */
-
-
-/**
-* \addtogroup group_hal_uart_enums
-* \{
-*/
 
 /** UART Parity */
 typedef enum
@@ -96,15 +99,7 @@ typedef enum
     CYHAL_UART_IRQ_TX_EMPTY            = 1 << 8, //!< The tx hardware buffer is empty
 } cyhal_uart_event_t;
 
-/** \} group_hal_uart_enums */
-
-
-/**
-* \addtogroup group_hal_uart_data_structures
-* \{
-*/
-
-/** Initial UART configuration */
+/** @brief Initial UART configuration */
 typedef struct
 {
     uint32_t data_bits; //!< The number of start bits
@@ -116,14 +111,6 @@ typedef struct
 
 /** UART callback function type */
 typedef void (*cyhal_uart_event_callback_t)(void *callback_arg, cyhal_uart_event_t event);
-
-/** \} group_hal_uart_data_structures */
-
-
-/**
-* \addtogroup group_hal_uart_functions
-* \{
-*/
 
 /** Initialize the uart peripheral. It sets the default parameters for uart
  *  peripheral, and configures its specifieds pins.
@@ -304,9 +291,6 @@ void cyhal_uart_register_callback(cyhal_uart_t *obj, cyhal_uart_event_callback_t
  * @param[in] enable        True to turn on interrupts, False to turn off
  */
 void cyhal_uart_enable_event(cyhal_uart_t *obj, cyhal_uart_event_t event, uint8_t intrPriority, bool enable);
-
-/** \} group_hal_uart_functions */
-
 
 #if defined(__cplusplus)
 }

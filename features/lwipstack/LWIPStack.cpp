@@ -217,6 +217,36 @@ const char *LWIP::get_ip_address()
 #endif
 }
 
+nsapi_error_t LWIP::get_ip_address_if(SocketAddress *address, const char *interface_name)
+{
+    if (!address) {
+        return NSAPI_ERROR_PARAMETER;
+    }
+
+    const ip_addr_t *addr;
+
+    if (interface_name == NULL) {
+        addr = get_ip_addr(true, &default_interface->netif);
+    } else {
+        addr = get_ip_addr(true, netif_find(interface_name));
+    }
+#if LWIP_IPV6
+    if (IP_IS_V6(addr)) {
+        char buf[NSAPI_IPv6_SIZE];
+        address->set_ip_address(ip6addr_ntoa_r(ip_2_ip6(addr), buf, NSAPI_IPv6_SIZE));
+        return NSAPI_ERROR_OK;
+    }
+#endif
+#if LWIP_IPV4
+    if (IP_IS_V4(addr)) {
+        char buf[NSAPI_IPv4_SIZE];
+        address->set_ip_address(ip4addr_ntoa_r(ip_2_ip4(addr), buf, NSAPI_IPv4_SIZE));
+        return NSAPI_ERROR_OK;
+    }
+#endif
+    return NSAPI_ERROR_UNSUPPORTED;
+}
+
 nsapi_error_t LWIP::socket_open(nsapi_socket_t *handle, nsapi_protocol_t proto)
 {
     // check if network is connected
@@ -230,14 +260,28 @@ nsapi_error_t LWIP::socket_open(nsapi_socket_t *handle, nsapi_protocol_t proto)
         return NSAPI_ERROR_NO_SOCKET;
     }
 
-    enum netconn_type lwip_proto = proto == NSAPI_TCP ? NETCONN_TCP : NETCONN_UDP;
+    enum netconn_type netconntype;
+    if (proto == NSAPI_TCP) {
+        netconntype = NETCONN_TCP;
+    } else if (proto == NSAPI_UDP) {
+        netconntype = NETCONN_UDP;
+    } else if (proto == NSAPI_ICMP) {
+        netconntype = NETCONN_RAW;
+    } else {
+        return NSAPI_ERROR_UNSUPPORTED;
+    }
 
 #if LWIP_IPV6
     // Enable IPv6 (or dual-stack)
-    lwip_proto = (enum netconn_type)(lwip_proto | NETCONN_TYPE_IPV6);
+    netconntype = (enum netconn_type)(netconntype | NETCONN_TYPE_IPV6);
 #endif
 
-    s->conn = netconn_new_with_callback(lwip_proto, &LWIP::socket_callback);
+    if (proto == NSAPI_ICMP) {
+        s->conn = netconn_new_with_proto_and_callback(NETCONN_RAW,
+                                                      (u8_t)IP_PROTO_ICMP, &LWIP::socket_callback);
+    } else {
+        s->conn = netconn_new_with_callback(netconntype, &LWIP::socket_callback);
+    }
 
     if (!s->conn) {
         arena_dealloc(s);
@@ -263,7 +307,9 @@ nsapi_error_t LWIP::socket_close(nsapi_socket_t handle)
         _event_flag.wait_any(TCP_CLOSED_FLAG, TCP_CLOSE_TIMEOUT);
     }
 #endif
-    pbuf_free(s->buf);
+    if (s->buf) {
+        pbuf_free(s->buf);
+    }
     err_t err = netconn_delete(s->conn);
     arena_dealloc(s);
     return err_remap(err);
@@ -425,7 +471,7 @@ nsapi_size_or_error_t LWIP::socket_sendto(nsapi_socket_t handle, const SocketAdd
     }
     if (netif_) {
         if ((addr.version == NSAPI_IPv4 && !get_ipv4_addr(netif_)) ||
-                (addr.version == NSAPI_IPv6 && !get_ipv6_addr(netif_))) {
+                (addr.version == NSAPI_IPv6 && !get_ipv6_addr(netif_) && !get_ipv6_link_local_addr(netif_))) {
             return NSAPI_ERROR_PARAMETER;
         }
     }
@@ -560,13 +606,14 @@ nsapi_error_t LWIP::setsockopt(nsapi_socket_t handle, int level, int optname, co
                 return NSAPI_ERROR_PARAMETER;
             }
 
-            /* Convert the interface address, or make sure it's the correct sort of "any" */
             if (imr->imr_interface.version != NSAPI_UNSPEC) {
+                /* Convert the interface address */
                 if (!convert_mbed_addr_to_lwip(&if_addr, &imr->imr_interface)) {
                     return NSAPI_ERROR_PARAMETER;
                 }
             } else {
-                ip_addr_set_any(IP_IS_V6(&if_addr), &if_addr);
+                /* Set interface address to "any", matching the group address type */
+                ip_addr_set_any(IP_IS_V6(&multi_addr), &if_addr);
             }
 
             igmp_err = ERR_USE; // Maps to NSAPI_ERROR_UNSUPPORTED

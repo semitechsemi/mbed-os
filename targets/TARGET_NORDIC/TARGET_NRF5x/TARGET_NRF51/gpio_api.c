@@ -159,6 +159,18 @@ static void gpio_apply_config(uint8_t pin)
     }
 }
 
+uint32_t gpio_set(PinName pin)
+{
+    MBED_ASSERT(pin != (PinName)NC);
+    m_gpio_cfg[pin].used_as_gpio = true;
+    m_gpio_cfg[pin].direction = PIN_INPUT;
+    m_gpio_cfg[pin].pull = PullNone;
+    m_gpio_cfg[pin].used_as_irq = false;
+    m_gpio_cfg[pin].irq_fall = false;
+    m_gpio_cfg[pin].irq_rise = false;
+
+    return (uint32_t)(1UL << pin);
+}
 
 void gpio_mode(gpio_t *obj, PinMode mode)
 {
@@ -204,7 +216,7 @@ int gpio_irq_init(gpio_irq_t *obj, PinName pin, gpio_irq_handler handler, uint32
     m_channel_ids[pin] = id;
 
     gpio_apply_config(pin);
-    return 1;
+    return 0;
 }
 
 

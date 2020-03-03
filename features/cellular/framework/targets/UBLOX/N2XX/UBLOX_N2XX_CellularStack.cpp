@@ -22,7 +22,8 @@
 using namespace mbed;
 using namespace mbed_cellular_util;
 
-UBLOX_N2XX_CellularStack::UBLOX_N2XX_CellularStack(ATHandler &atHandler, int cid, nsapi_ip_stack_t stack_type): AT_CellularStack(atHandler, cid, stack_type)
+UBLOX_N2XX_CellularStack::UBLOX_N2XX_CellularStack(ATHandler &atHandler, int cid, nsapi_ip_stack_t stack_type, AT_CellularDevice &device):
+    AT_CellularStack(atHandler, cid, stack_type, device)
 {
     // URC handlers for sockets
     _at.set_urc_handler("+NSONMI:", callback(this, &UBLOX_N2XX_CellularStack::NSONMI_URC));
@@ -30,7 +31,7 @@ UBLOX_N2XX_CellularStack::UBLOX_N2XX_CellularStack(ATHandler &atHandler, int cid
 
 UBLOX_N2XX_CellularStack::~UBLOX_N2XX_CellularStack()
 {
-    _at.set_urc_handler("+NSONMI:", NULL);
+    _at.set_urc_handler("+NSONMI:", nullptr);
 }
 
 nsapi_error_t UBLOX_N2XX_CellularStack::socket_listen(nsapi_socket_t handle, int backlog)
@@ -54,24 +55,13 @@ void UBLOX_N2XX_CellularStack::NSONMI_URC()
 
     socket = find_socket(a);
     if (socket != NULL) {
-        socket->rx_avail = true;
         socket->pending_bytes = b;
         // No debug prints here as they can affect timing
-        // and cause data loss in UARTSerial
+        // and cause data loss in BufferedSerial
         if (socket->_cb != NULL) {
             socket->_cb(socket->_data);
         }
     }
-}
-
-int UBLOX_N2XX_CellularStack::get_max_socket_count()
-{
-    return N2XX_MAX_SOCKET;
-}
-
-bool UBLOX_N2XX_CellularStack::is_protocol_supported(nsapi_protocol_t protocol)
-{
-    return (protocol == NSAPI_UDP);
 }
 
 nsapi_error_t UBLOX_N2XX_CellularStack::create_socket_impl(CellularSocket *socket)
@@ -84,10 +74,7 @@ nsapi_error_t UBLOX_N2XX_CellularStack::create_socket_impl(CellularSocket *socke
     }
 
     _at.lock();
-    _at.cmd_start("AT+NSOCR=\"DGRAM\",17,");
-    _at.write_int(localport);
-    _at.write_int(1);
-    _at.cmd_stop();
+    _at.cmd_start_stop("+NSOCR", "=", "%s%d%d%d", "DGRAM", 17, localport, 1);
 
     _at.resp_start();
     sock_id = _at.read_int();
@@ -100,7 +87,7 @@ nsapi_error_t UBLOX_N2XX_CellularStack::create_socket_impl(CellularSocket *socke
     _at.unlock();
 
     // Check for duplicate socket id delivered by modem
-    for (int i = 0; i < N2XX_MAX_SOCKET; i++) {
+    for (int i = 0; i < _device.get_property(AT_CellularDevice::PROPERTY_SOCKET_COUNT); i++) {
         CellularSocket *sock = _socket[i];
         if (sock && sock != socket && sock->id == sock_id) {
             return NSAPI_ERROR_NO_SOCKET;
@@ -129,13 +116,8 @@ nsapi_size_or_error_t UBLOX_N2XX_CellularStack::socket_sendto_impl(CellularSocke
     }
     char_str_to_hex_str((const char *)data, size, dataStr);
 
-    _at.cmd_start("AT+NSOST=");
-    _at.write_int(socket->id);
-    _at.write_string(address.get_ip_address());
-    _at.write_int(address.get_port());
-    _at.write_int(size);
-    _at.write_string(dataStr);
-    _at.cmd_stop();
+    _at.cmd_start_stop("+NSOST", "=", "%d%s%d%d%s", socket->id, address.get_ip_address(),
+                       address.get_port(), size, dataStr);
 
     _at.resp_start();
     _at.skip_param(); // skip socket id
@@ -176,10 +158,7 @@ nsapi_size_or_error_t UBLOX_N2XX_CellularStack::socket_recvfrom_impl(CellularSoc
             read_blk = length;
         }
         if (socket->pending_bytes > 0) {
-            _at.cmd_start("AT+NSORF=");
-            _at.write_int(socket->id);
-            _at.write_int(read_blk);
-            _at.cmd_stop();
+            _at.cmd_start_stop("+NSORF", "=", "%d%d", socket->id, read_blk);
 
             _at.resp_start();
             _at.skip_param(); // receiving socket id
@@ -220,7 +199,6 @@ nsapi_size_or_error_t UBLOX_N2XX_CellularStack::socket_recvfrom_impl(CellularSoc
     }
     timer.stop();
 
-    socket->rx_avail = false;
     socket->pending_bytes = 0;
     if (!count || (_at.get_last_error() != NSAPI_ERROR_OK)) {
         return NSAPI_ERROR_WOULD_BLOCK;
@@ -237,10 +215,5 @@ nsapi_size_or_error_t UBLOX_N2XX_CellularStack::socket_recvfrom_impl(CellularSoc
 
 nsapi_error_t UBLOX_N2XX_CellularStack::socket_close_impl(int sock_id)
 {
-    _at.lock();
-    _at.cmd_start("AT+NSOCL=");
-    _at.write_int(sock_id);
-    _at.cmd_stop_read_resp();
-
-    return _at.unlock_return_error();
+    return _at.at_cmd_discard("+NSOCL", "=", "%d", sock_id);
 }

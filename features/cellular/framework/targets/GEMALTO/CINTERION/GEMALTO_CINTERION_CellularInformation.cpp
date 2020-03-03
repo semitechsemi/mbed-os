@@ -19,19 +19,13 @@
 
 namespace mbed {
 
-GEMALTO_CINTERION_CellularInformation::GEMALTO_CINTERION_CellularInformation(ATHandler &at) : AT_CellularInformation(at)
+GEMALTO_CINTERION_CellularInformation::GEMALTO_CINTERION_CellularInformation(ATHandler &at, AT_CellularDevice &device) : AT_CellularInformation(at, device)
 {
 }
 
 nsapi_error_t GEMALTO_CINTERION_CellularInformation::get_iccid(char *buf, size_t buf_size)
 {
-    _at.lock();
-    _at.cmd_start("AT^SCID");
-    _at.cmd_stop();
-    _at.resp_start("^SCID:");
-    _at.read_string(buf, buf_size);
-    _at.resp_stop();
-    return _at.unlock_return_error();
+    return _at.at_cmd_str("^SCID", "", buf, buf_size);
 }
 
 } /* namespace mbed */

@@ -51,10 +51,14 @@ optional arguments:
   -x ..., --extra ...  additional build parameters
 ```
 
+* The script must be run from the mbed-os folder via `tools/psa/release.py`,
+  otherwise the list of available tests will not be accurate and the test
+  partitions will not be properly generated.
 * When `MCU ` is not specified, the script compiles all the images for all the targets.
 * When `-t/--tc` is not specified, the script compiles with the default_toolchain speciified in targets.json.
 * When `-d/--debug` is not specified, the script compiles the images using the release profile.
-* When `--commit` is not specified, the script will not commit the images to git.
+* When `--commit` is not specified, the script will not commit the images to git and
+  any auto-generated PSA related components and services.
 * A user can specify additional commands that will be passed on to the build commands (Ex. -D for compilation defines).
 
 This script should be run in following scenarios:

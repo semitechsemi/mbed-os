@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2018, ARM Limited, All Rights Reserved
+ * Copyright (c) 2018-2020, ARM Limited, All Rights Reserved
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,6 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#if USB_DEVICE_TESTS
+
+#if defined(MBED_CONF_RTOS_PRESENT)
 
 #include "stdint.h"
 #include "stdlib.h"
@@ -39,6 +43,8 @@
 #define VENDOR_TEST_CTRL_OUT_SIZES      10
 #define VENDOR_TEST_RW_RESTART          11
 #define VENDOR_TEST_ABORT_BUFF_CHECK    12
+
+#define CTRL_BUF_SIZE (2048)
 
 #define EVENT_READY (1 << 0)
 
@@ -167,9 +173,9 @@ USBEndpointTester::USBEndpointTester(USBPhy *phy, uint16_t vendor_id, uint16_t p
         MBED_ASSERT(_endpoint_buffs[i] != NULL);
     }
     MBED_ASSERT(resolver.valid());
-
     queue = mbed::mbed_highprio_event_queue();
     configuration_desc(0);
+    ctrl_buf = new uint8_t[CTRL_BUF_SIZE];
     init();
     USBDevice::connect();
     flags.wait_any(EVENT_READY, osWaitForever, false);
@@ -183,6 +189,7 @@ USBEndpointTester::~USBEndpointTester()
         }
     }
     deinit();
+    delete[] ctrl_buf;
 }
 
 const char *USBEndpointTester::get_desc_string(const uint8_t *desc)
@@ -225,7 +232,7 @@ void USBEndpointTester::callback_request(const setup_packet_t *setup)
             case VENDOR_TEST_CTRL_IN:
                 result = Send;
                 data = ctrl_buf;
-                size = setup->wValue < sizeof(ctrl_buf) ? setup->wValue : sizeof(ctrl_buf);
+                size = setup->wValue < CTRL_BUF_SIZE ? setup->wValue : CTRL_BUF_SIZE;
                 break;
             case VENDOR_TEST_CTRL_OUT:
                 result = Receive;
@@ -857,3 +864,5 @@ void USBEndpointTester::start_ep_in_abort_test()
     write_start(_endpoints[EP_BULK_IN], _endpoint_buffs[EP_BULK_IN], (*_endpoint_configs)[EP_BULK_IN].max_packet);
     write_start(_endpoints[EP_INT_IN], _endpoint_buffs[EP_INT_IN], (*_endpoint_configs)[EP_INT_IN].max_packet);
 }
+#endif
+#endif //USB_DEVICE_TESTS

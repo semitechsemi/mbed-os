@@ -27,8 +27,6 @@
 #include "platform/FileHandle.h"
 
 namespace mbed {
-
-/** \ingroup mbed-os-public */
 /** \addtogroup platform-public-api Platform */
 /** @{*/
 /**
@@ -41,7 +39,7 @@ namespace mbed {
  *
  * Here are some examples:
  * @code
- * UARTSerial serial = UARTSerial(D1, D0);
+ * BufferedSerial serial = BufferedSerial(D1, D0);
  * ATCmdParser at = ATCmdParser(&serial, "\r\n");
  * int value;
  * char buffer[100];
@@ -81,6 +79,24 @@ private:
     };
     oob *_oobs;
 
+    /**
+     * Receive an AT response
+     *
+     * Receives a formatted response using scanf style formatting
+     * @see scanf
+     *
+     * Responses are parsed line at a time.
+     * If multiline is set to false parse only one line otherwise parse multiline response
+     * Any received data that does not match the response is ignored until
+     * a timeout occurs.
+     *
+     * @param response scanf-like format string of response to expect
+     * @param ... all scanf-like arguments to extract from response
+     * @param multiline determinate if parse one or multiple lines.
+     * @return number of bytes read or -1 on failure
+     */
+    int vrecvscanf(const char *response, std::va_list args, bool multiline);
+
 public:
 
     /**
@@ -94,7 +110,7 @@ public:
      */
     ATCmdParser(FileHandle *fh, const char *output_delimiter = "\r",
                 int buffer_size = 256, int timeout = 8000, bool debug = false)
-        : _fh(fh), _buffer_size(buffer_size), _oob_cb_count(0), _in_prev(0), _oobs(NULL)
+        : _fh(fh), _buffer_size(buffer_size), _oob_cb_count(0), _in_prev(0), _aborted(false), _oobs(NULL)
     {
         _buffer = new char[buffer_size];
         set_timeout(timeout);
@@ -127,23 +143,6 @@ public:
     }
 
     /**
-     * For backward compatibility.
-     * @deprecated Do not use this function. This function has been replaced with set_timeout for consistency.
-     *
-     * Please use set_timeout(int) API only from now on.
-     * Allows timeout to be changed between commands
-     *
-     * @param timeout ATCmdParser APIs (read/write/send/recv ..etc) throw an
-     *                error if no response is received in `timeout` duration
-     *
-     */
-    MBED_DEPRECATED_SINCE("mbed-os-5.5.0", "Replaced with set_timeout for consistency")
-    void setTimeout(int timeout)
-    {
-        set_timeout(timeout);
-    }
-
-    /**
      * Sets string of characters to use as line delimiters
      *
      * @param output_delimiter String of characters to use as line delimiters
@@ -155,21 +154,6 @@ public:
     }
 
     /**
-     * For backwards compatibility.
-     * @deprecated Do not use this function. This function has been replaced with set_delimiter for consistency.
-     *
-     * Please use set_delimiter(const char *) API only from now on.
-     * Sets string of characters to use as line delimiters
-     *
-     * @param output_delimiter string of characters to use as line delimiters
-     */
-    MBED_DEPRECATED_SINCE("mbed-os-5.5.0", "Replaced with set_delimiter for consistency")
-    void setDelimiter(const char *output_delimiter)
-    {
-        set_delimiter(output_delimiter);
-    }
-
-    /**
      * Allows traces from modem to be turned on or off
      *
      * @param on Set as 1 to turn on traces and 0 to disable traces.
@@ -177,20 +161,6 @@ public:
     void debug_on(uint8_t on)
     {
         _dbg_on = (on) ? 1 : 0;
-    }
-
-    /**
-     * For backward compatibility.
-     * @deprecated Do not use this function. This function has been replaced with debug_on for consistency.
-     *
-     * Allows traces from modem to be turned on or off
-     *
-     * @param on Set as 1 to turn on traces and 0 to disable traces.
-     */
-    MBED_DEPRECATED_SINCE("mbed-os-5.5.0", "Replaced with debug_on for consistency")
-    void debugOn(uint8_t on)
-    {
-        debug_on(on);
     }
 
     /**
@@ -273,6 +243,9 @@ public:
 
     /**
      * Direct scanf on underlying stream
+     * This function does not itself match whitespace in its format string, so \n is not significant to it.
+     * It should be used only when certain string is needed or format ends with certain character, otherwise
+     * it will fill the output with one character.
      * @see scanf
      *
      * @param format Format string to pass to scanf
@@ -291,6 +264,12 @@ public:
      * @note out-of-band data is only processed during a scanf call
      */
     void oob(const char *prefix, mbed::Callback<void()> func);
+
+    /**
+     * @brief remove_oob Removes oob callback handler
+     * @param prefix Prefix to identify oob to be removed.
+     */
+    void remove_oob(const char *prefix);
 
     /**
      * Flushes the underlying stream

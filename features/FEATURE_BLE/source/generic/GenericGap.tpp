@@ -511,6 +511,26 @@ ble_error_t GenericGap<PalGapImpl, PalSecurityManager, ConnectionEventMonitorEve
 }
 
 template <template<class> class PalGapImpl, class PalSecurityManager, class ConnectionEventMonitorEventHandler>
+ble_error_t GenericGap<PalGapImpl, PalSecurityManager, ConnectionEventMonitorEventHandler>::setRandomStaticAddress_(
+    const ble::address_t& address
+)
+{
+    if (is_random_static_address(address.data()) == false) {
+        return BLE_ERROR_INVALID_PARAM;
+    }
+
+    ble_error_t err = _pal_gap.set_random_address(address);
+    if (err) {
+        return err;
+    }
+
+    _address_type = LegacyAddressType::RANDOM_STATIC;
+    _address = address;
+    _random_static_identity_address = address;
+    return BLE_ERROR_NONE;
+}
+
+template <template<class> class PalGapImpl, class PalSecurityManager, class ConnectionEventMonitorEventHandler>
 ble_error_t GenericGap<PalGapImpl, PalSecurityManager, ConnectionEventMonitorEventHandler>::getAddress_(
     LegacyAddressType_t *type,
     BLEProtocol::AddressBytes_t address
@@ -1887,6 +1907,19 @@ void GenericGap<PalGapImpl, PalSecurityManager, ConnectionEventMonitorEventHandl
         address = _pal_gap.get_random_address();
     }
 
+    // legacy process event
+    processConnectionEvent(
+        e.connection_handle,
+        e.role.value() == e.role.CENTRAL ? LegacyGap::CENTRAL : LegacyGap::PERIPHERAL,
+        e.peer_address_type,
+        e.peer_address.data(),
+        _address_type,
+        address.data(),
+        &connection_params,
+        e.local_resolvable_private_address.data(),
+        e.peer_resolvable_private_address.data()
+    );
+
     // new process event
     if (_eventHandler) {
         _eventHandler->onConnectionComplete(
@@ -1905,19 +1938,6 @@ void GenericGap<PalGapImpl, PalSecurityManager, ConnectionEventMonitorEventHandl
             )
         );
     }
-
-    // legacy process event
-    processConnectionEvent(
-        e.connection_handle,
-        e.role.value() == e.role.CENTRAL ? LegacyGap::CENTRAL : LegacyGap::PERIPHERAL,
-        e.peer_address_type,
-        e.peer_address.data(),
-        _address_type,
-        address.data(),
-        &connection_params,
-        e.local_resolvable_private_address.data(),
-        e.peer_resolvable_private_address.data()
-    );
 
 #if BLE_FEATURE_SECURITY
     // Now starts pairing or authentication procedures if required

@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2019 ARM Limited
+ * Copyright (c) 2019 STMicroelectronics
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -153,7 +154,7 @@ int32_t flash_program_page(flash_t *obj, uint32_t address, const uint8_t *data, 
     StartAddress = address;
 
     /*  HW needs an aligned address to program flash, which data parameters doesn't ensure */
-    if ((uint32_t) data % 4 != 0) { // Data is not aligned, copy data in a temp buffer before programming it
+    if ((uint32_t) data % 8 != 0) { // Data is not aligned, copy data in a temp buffer before programming it
         volatile uint64_t data64;
         while ((address < (StartAddress + size)) && (status == 0)) {
             for (uint8_t i = 0; i < 8; i++) {

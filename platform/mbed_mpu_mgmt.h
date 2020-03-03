@@ -1,13 +1,6 @@
-/** \ingroup mbed-os-public */
-/** \addtogroup platform-public-api */
-/** @{*/
-/**
- * \defgroup platform_mpu_mgmt MPU management functions
- * @{
- */
-
-/* mbed Microcontroller Library
- * Copyright (c) 2006-2019 ARM Limited
+/*
+ * Copyright (c) 2018-2020, Arm Limited and affiliates.
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #ifndef MBED_MPU_MGMT_H
 #define MBED_MPU_MGMT_H
 
@@ -29,6 +23,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** \addtogroup platform-public-api */
+/** @{*/
+
+/**
+ * \defgroup platform_mpu_mgmt MPU management functions
+ * @{
+ */
 
 #if (DEVICE_MPU && MBED_CONF_PLATFORM_USE_MPU) || defined(DOXYGEN_ONLY)
 

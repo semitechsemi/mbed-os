@@ -19,11 +19,12 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-#include "diskio.h"
-#include "ffconf.h"
+#include "features/storage/filesystem/fat/ChaN/diskio.h"
+#include "features/storage/filesystem/fat/ChaN/ffconf.h"
+#include "features/storage/filesystem/fat/ChaN/ff.h"
 #include "platform/mbed_debug.h"
 #include "platform/mbed_critical.h"
-#include "filesystem/mbed_filesystem.h"
+#include "features/storage/filesystem/mbed_filesystem.h"
 #include "FATFileSystem.h"
 
 #include <errno.h>
@@ -92,7 +93,7 @@ public:
     Deferred &operator=(const Deferred &);
 
 public:
-    Deferred(T t, Callback<void(T)> ondefer = NULL)
+    Deferred(T t, Callback<void(T)> ondefer = nullptr)
         : _t(t), _ondefer(ondefer)
     {
     }

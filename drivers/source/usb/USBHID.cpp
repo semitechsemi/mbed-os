@@ -15,7 +15,8 @@
  * limitations under the License.
  */
 
-#include "stdint.h"
+#include <stdint.h>
+#include <string.h>
 #include "USBHID.h"
 #include "EndpointResolver.h"
 #include "usb_phy_api.h"
@@ -145,6 +146,9 @@ void USBHID::_init(uint8_t output_report_length, uint8_t input_report_length)
     _read_idle = true;
     _output_length = output_report_length;
     _input_length = input_report_length;
+    reportLength = 0;
+    _input_report.length = 0;
+    _output_report.length = 0;
 }
 
 bool USBHID::ready()

@@ -9,7 +9,7 @@
 *
 ********************************************************************************
 * \copyright
-* Copyright 2018-2019 Cypress Semiconductor Corporation
+* Copyright 2018-2020 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,12 +29,13 @@
 * \addtogroup group_hal_interconnect INTERCONNECT (Internal digital routing)
 * \ingroup group_hal
 * \{
-* High level interface for interacting with the Cypress digital routing.
+* High level interface for interacting with the digital routing.
 *
-* \defgroup group_hal_interconnect_macros Macros
-* \defgroup group_hal_interconnect_functions Functions
-* \defgroup group_hal_interconnect_data_structures Data Structures
-* \defgroup group_hal_interconnect_enums Enumerated Types
+* This provides limited facilities for runtime manipulation of the on chip routing.
+* The following types of connections are supported:
+* * Connection from a peripheral to a pin. (A dedicated connection must exist
+    between the pin and the peripheral; see the device datasheet for more details)
+* * Experimental support for connecting between two on-chip "trigger" terminals.
 */
 
 #pragma once
@@ -49,11 +50,6 @@
 extern "C" {
 #endif
 
-/**
-* \addtogroup group_hal_interconnect_macros
-* \{
-*/
-
 /** No connection is available */
 #define CYHAL_CONNECT_RSLT_NO_CONNECTION (CY_RSLT_CREATE(CY_RSLT_TYPE_ERROR, CYHAL_RSLT_MODULE_INTERCONNECT, 0))
 /** The connections source and destination are already connected */
@@ -63,14 +59,6 @@ extern "C" {
 
 /** Indicates that a mux output does not continue to another mux */
 #define CYHAL_INTERCONNECT_MUX_NOT_CONTINUATION 0xFF
-
-/** \} group_hal_interconnect_macros */
-
-
-/**
-* \addtogroup group_hal_interconnect_functions
-* \{
-*/
 
 /** Connect a pin to a peripheral terminal. This will route a direct connect from the pin to the peripheral.
  * Any previous direct connection from the pin will be overriden.
@@ -94,8 +82,6 @@ cy_rslt_t cyhal_disconnect_pin(cyhal_gpio_t pin);
  * @return The status of the connect request
  */
 cy_rslt_t cyhal_connect_trigger(cyhal_source_t source, cyhal_dest_t dest);
-
-/** \} group_hal_interconnect_functions */
 
 #if defined(__cplusplus)
 }

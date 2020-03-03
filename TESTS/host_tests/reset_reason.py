@@ -16,11 +16,10 @@ limitations under the License.
 """
 import time
 from mbed_host_tests import BaseHostTest
-from mbed_host_tests.host_tests_runner.host_test_default import DefaultTestSelector
 
 DEFAULT_SYNC_DELAY = 4.0
 
-MSG_VALUE_WATCHDOG_PRESENT = 'wdg_present'
+MSG_VALUE_WATCHDOG_PRESENT = 1
 MSG_VALUE_DUMMY = '0'
 MSG_VALUE_RESET_REASON_GET = 'get'
 MSG_VALUE_RESET_REASON_CLEAR = 'clear'
@@ -32,6 +31,7 @@ MSG_KEY_RESET_REASON_RAW = 'reason_raw'
 MSG_KEY_RESET_REASON = 'reason'
 MSG_KEY_DEVICE_RESET = 'reset'
 MSG_KEY_SYNC = '__sync'
+MSG_KEY_RESET_COMPLETE = 'reset_complete'
 
 RESET_REASONS = {
     'POWER_ON': '0',
@@ -66,6 +66,7 @@ class ResetReasonTest(BaseHostTest):
 
     def __init__(self):
         super(ResetReasonTest, self).__init__()
+        self.device_reasons = None
         self.device_has_watchdog = None
         self.raw_reset_reasons = set()
         self.sync_delay = DEFAULT_SYNC_DELAY
@@ -80,14 +81,18 @@ class ResetReasonTest(BaseHostTest):
         self.register_callback(MSG_KEY_RESET_REASON_RAW, self.cb_reset_reason_raw)
         self.register_callback(MSG_KEY_RESET_REASON, self.cb_reset_reason)
         self.register_callback(MSG_KEY_DEVICE_RESET, self.cb_reset_reason)
+        self.register_callback(MSG_KEY_RESET_COMPLETE, self.cb_reset_reason)
 
     def cb_device_ready(self, key, value, timestamp):
         """Request a raw value of the reset_reason register.
 
-        Additionally, save the device's watchdog status on the first call.
+        Additionally, save the device's reset_reason capabilities
+        and the watchdog status on the first call.
         """
-        if self.device_has_watchdog is None:
-            self.device_has_watchdog = (value == MSG_VALUE_WATCHDOG_PRESENT)
+        if self.device_reasons is None:
+            reasons, wdg_status = (int(i, base=16) for i in value.split(','))
+            self.device_has_watchdog = (wdg_status == MSG_VALUE_WATCHDOG_PRESENT)
+            self.device_reasons = [k for k, v in RESET_REASONS.items() if (reasons & 1 << int(v))]
         self.send_kv(MSG_KEY_RESET_REASON_RAW, MSG_VALUE_RESET_REASON_GET)
 
     def cb_reset_reason_raw(self, key, value, timestamp):
@@ -132,32 +137,45 @@ class ResetReasonTest(BaseHostTest):
         __ignored_clear_ack = yield
 
         # Request a NVIC_SystemReset() call.
-        self.send_kv(MSG_KEY_DEVICE_RESET, MSG_VALUE_DEVICE_RESET_NVIC)
-        __ignored_reset_ack = yield
-        time.sleep(self.sync_delay)
-        self.send_kv(MSG_KEY_SYNC, MSG_VALUE_DUMMY)
-        reset_reason = yield
-        raise_if_different(RESET_REASONS['SOFTWARE'], reset_reason, 'Wrong reset reason. ')
-        self.send_kv(MSG_KEY_RESET_REASON, MSG_VALUE_RESET_REASON_CLEAR)
-        __ignored_clear_ack = yield
+        expected_reason = 'SOFTWARE'
+        if expected_reason not in self.device_reasons:
+            self.log('Skipping the {} reset reason -- not supported.'.format(expected_reason))
+        else:
+            # Request a NVIC_SystemReset() call.
+            self.send_kv(MSG_KEY_DEVICE_RESET, MSG_VALUE_DEVICE_RESET_NVIC)
+            __ignored_reset_ack = yield
+            time.sleep(self.sync_delay)
+            self.send_kv(MSG_KEY_SYNC, MSG_VALUE_DUMMY)
+            reset_reason = yield
+            raise_if_different(RESET_REASONS[expected_reason], reset_reason, 'Wrong reset reason. ')
+            self.send_kv(MSG_KEY_RESET_REASON, MSG_VALUE_RESET_REASON_CLEAR)
+            __ignored_clear_ack = yield
 
         # Reset the device using DAP.
-        self.reset_dut(DefaultTestSelector.RESET_TYPE_SW_RST)
-        reset_reason = yield
-        raise_if_different(RESET_REASONS['PIN_RESET'], reset_reason, 'Wrong reset reason. ')
-        self.send_kv(MSG_KEY_RESET_REASON, MSG_VALUE_RESET_REASON_CLEAR)
-        __ignored_clear_ack = yield
+        expected_reason = 'PIN_RESET'
+        if expected_reason not in self.device_reasons:
+            self.log('Skipping the {} reset reason -- not supported.'.format(expected_reason))
+        else:
+            self.reset()
+            __ignored_reset_ack = yield  # 'reset_complete'
+            time.sleep(self.sync_delay)
+            self.send_kv(MSG_KEY_SYNC, MSG_VALUE_DUMMY)
+            reset_reason = yield
+            raise_if_different(RESET_REASONS[expected_reason], reset_reason, 'Wrong reset reason. ')
+            self.send_kv(MSG_KEY_RESET_REASON, MSG_VALUE_RESET_REASON_CLEAR)
+            __ignored_clear_ack = yield
 
         # Start a watchdog timer and wait for it to reset the device.
-        if not self.device_has_watchdog:
-            self.log('DUT does not have a watchdog. Skipping this reset reason.')
+        expected_reason = 'WATCHDOG'
+        if expected_reason not in self.device_reasons or not self.device_has_watchdog:
+            self.log('Skipping the {} reset reason -- not supported.'.format(expected_reason))
         else:
             self.send_kv(MSG_KEY_DEVICE_RESET, MSG_VALUE_DEVICE_RESET_WATCHDOG)
             __ignored_reset_ack = yield
             time.sleep(self.sync_delay)
             self.send_kv(MSG_KEY_SYNC, MSG_VALUE_DUMMY)
             reset_reason = yield
-            raise_if_different(RESET_REASONS['WATCHDOG'], reset_reason, 'Wrong reset reason. ')
+            raise_if_different(RESET_REASONS[expected_reason], reset_reason, 'Wrong reset reason. ')
 
         # The sequence is correct -- test passed.
         yield True

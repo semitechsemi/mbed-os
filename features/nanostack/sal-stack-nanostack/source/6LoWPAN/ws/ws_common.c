@@ -22,14 +22,18 @@
 #include "randLIB.h"
 #include <ns_list.h>
 #include <nsdynmemLIB.h>
+#include "Common_Protocols/icmpv6.h"
 #include "6LoWPAN/ws/ws_config.h"
 #include "6LoWPAN/ws/ws_common_defines.h"
 #include "6LoWPAN/ws/ws_common.h"
 #include "6LoWPAN/ws/ws_bootstrap.h"
 #include "6LoWPAN/ws/ws_bbr_api_internal.h"
+#include "6LoWPAN/ws/ws_pae_controller.h"
 #include "Service_Libs/etx/etx.h"
 #include "Service_Libs/mac_neighbor_table/mac_neighbor_table.h"
 #include "Service_Libs/blacklist/blacklist.h"
+#include "RPL/rpl_protocol.h"
+#include "RPL/rpl_control.h"
 #include "ws_management_api.h"
 #include "mac_api.h"
 
@@ -285,6 +289,9 @@ int8_t ws_common_allocate_and_init(protocol_interface_info_entry_t *cur)
     ns_list_init(&cur->ws_info->active_nud_process);
     ns_list_init(&cur->ws_info->free_nud_entries);
 
+    ns_list_init(&cur->ws_info->parent_list_free);
+    ns_list_init(&cur->ws_info->parent_list_reserved);
+
     cur->ws_info->pan_information.use_parent_bs = true;
     cur->ws_info->pan_information.rpl_routing_method = true;
     cur->ws_info->pan_information.version = WS_FAN_VERSION_1_0;
@@ -292,8 +299,14 @@ int8_t ws_common_allocate_and_init(protocol_interface_info_entry_t *cur)
     cur->ws_info->hopping_schdule.regulatory_domain = REG_DOMAIN_EU;
     cur->ws_info->hopping_schdule.operating_mode = OPERATING_MODE_3;
     cur->ws_info->hopping_schdule.operating_class = 2;
+    // Clock drift value 255 indicates that information is not provided
+    cur->ws_info->hopping_schdule.clock_drift = 255;
+    // Timing accuracy is given from 0 to 2.55msec with 10usec resolution
+    cur->ws_info->hopping_schdule.timing_accurancy = 100;
     ws_common_regulatory_domain_config(cur);
     cur->ws_info->network_size_config = NETWORK_SIZE_MEDIUM;
+    cur->ws_info->rpl_parent_candidate_max = WS_RPL_PARENT_CANDIDATE_MAX;
+    cur->ws_info->rpl_selected_parent_max = WS_RPL_SELECTED_PARENT_MAX;
     ws_common_network_size_configure(cur, 200); // defaults to medium network size
 
     // Set defaults for the device. user can modify these.
@@ -304,6 +317,9 @@ int8_t ws_common_allocate_and_init(protocol_interface_info_entry_t *cur)
     cur->ws_info->fhss_bc_dwell_interval = WS_FHSS_BC_DWELL_INTERVAL;
     cur->ws_info->fhss_uc_channel_function = WS_DH1CF;
     cur->ws_info->fhss_bc_channel_function = WS_DH1CF;
+
+    cur->ws_info->pending_key_index_info.state = NO_PENDING_PROCESS;
+
     for (uint8_t n = 0; n < 8; n++) {
         cur->ws_info->fhss_channel_mask[n] = 0xffffffff;
     }
@@ -323,11 +339,13 @@ void ws_common_network_size_configure(protocol_interface_info_entry_t *cur, uint
         // doublings:3 (128s)
         // redundancy; 0 Disabled
         if (cur->ws_info->network_size_config == NETWORK_SIZE_AUTOMATIC) {
-            ws_bbr_rpl_config(14, 3, 0);
+            ws_bbr_rpl_config(cur, 14, 3, 0, WS_RPL_MAX_HOP_RANK_INCREASE, WS_RPL_MIN_HOP_RANK_INCREASE);
+        } else if (cur->ws_info->network_size_config == NETWORK_SIZE_CERTIFICATE) {
+            ws_bbr_rpl_config(cur, 0, 0, 0, WS_CERTIFICATE_RPL_MAX_HOP_RANK_INCREASE, WS_CERTIFICATE_RPL_MIN_HOP_RANK_INCREASE);
         } else {
-            ws_bbr_rpl_config(0, 0, 0);
+            ws_bbr_rpl_config(cur, 0, 0, 0, WS_RPL_MAX_HOP_RANK_INCREASE, WS_RPL_MIN_HOP_RANK_INCREASE);
         }
-
+        ws_pae_controller_timing_adjust(1); // Fast and reactive network
     } else if (network_size < 300) {
         // Configure the Wi-SUN discovery trickle parameters
         cur->ws_info->trickle_params_pan_discovery = trickle_params_pan_discovery_medium;
@@ -335,7 +353,8 @@ void ws_common_network_size_configure(protocol_interface_info_entry_t *cur, uint
         // imin: 15 (32s)
         // doublings:5 (960s)
         // redundancy; 10
-        ws_bbr_rpl_config(15, 5, 10);
+        ws_bbr_rpl_config(cur, 15, 5, 10, WS_RPL_MAX_HOP_RANK_INCREASE, WS_RPL_MIN_HOP_RANK_INCREASE);
+        ws_pae_controller_timing_adjust(9); // medium limited network
     } else {
         // Configure the Wi-SUN discovery trickle parameters
         cur->ws_info->trickle_params_pan_discovery = trickle_params_pan_discovery_large;
@@ -343,7 +362,8 @@ void ws_common_network_size_configure(protocol_interface_info_entry_t *cur, uint
         // imin: 19 (524s, 9 min)
         // doublings:1 (1048s, 17 min)
         // redundancy; 10 May need some tuning still
-        ws_bbr_rpl_config(19, 1, 10);
+        ws_bbr_rpl_config(cur, 19, 1, 10, WS_RPL_MAX_HOP_RANK_INCREASE, WS_RPL_MIN_HOP_RANK_INCREASE);
+        ws_pae_controller_timing_adjust(24); // Very slow and high latency network
     }
     return;
 }
@@ -374,6 +394,7 @@ void ws_common_neighbor_update(protocol_interface_info_entry_t *cur, const uint8
 void ws_common_aro_failure(protocol_interface_info_entry_t *cur, const uint8_t *ll_address)
 {
     tr_warn("ARO registration Failure %s", trace_ipv6(ll_address));
+    blacklist_update(ll_address, false);
     ws_bootstrap_aro_failure(cur, ll_address);
 }
 
@@ -385,7 +406,7 @@ void ws_common_neighbor_remove(protocol_interface_info_entry_t *cur, const uint8
 
 
 
-bool ws_common_allow_child_registration(protocol_interface_info_entry_t *interface, const uint8_t *eui64)
+uint8_t ws_common_allow_child_registration(protocol_interface_info_entry_t *interface, const uint8_t *eui64)
 {
     uint8_t child_count = 0;
     uint8_t max_child_count = mac_neighbor_info(interface)->list_total_size - WS_NON_CHILD_NEIGHBOUR_COUNT;
@@ -398,8 +419,15 @@ bool ws_common_allow_child_registration(protocol_interface_info_entry_t *interfa
     //Validate Is EUI64 already allocated for any address
     if (ipv6_neighbour_has_registered_by_eui64(&interface->ipv6_neighbour_cache, eui64)) {
         tr_info("Child registration from old child");
-        return true;
+        return ARO_SUCCESS;
     }
+
+    //Verify that we have Selected Parent
+    if (interface->bootsrap_mode != ARM_NWK_BOOTSRAP_MODE_6LoWPAN_BORDER_ROUTER && !rpl_control_parent_candidate_list_size(interface, true)) {
+        tr_info("Do not accept new ARO child: no selected parent");
+        return ARO_TOPOLOGICALLY_INCORRECT;
+    }
+
 
     ns_list_foreach_safe(mac_neighbor_table_entry_t, cur, &mac_neighbor_info(interface)->neighbour_list) {
 
@@ -409,10 +437,10 @@ bool ws_common_allow_child_registration(protocol_interface_info_entry_t *interfa
     }
     if (child_count >= max_child_count) {
         tr_warn("Child registration not allowed %d/%d, max:%d", child_count, max_child_count, mac_neighbor_info(interface)->list_total_size);
-        return false;
+        return ARO_FULL;
     }
     tr_info("Child registration allowed %d/%d, max:%d", child_count, max_child_count, mac_neighbor_info(interface)->list_total_size);
-    return true;
+    return ARO_SUCCESS;
 }
 
 bool ws_common_negative_aro_mark(protocol_interface_info_entry_t *interface, const uint8_t *eui64)
@@ -421,27 +449,17 @@ bool ws_common_negative_aro_mark(protocol_interface_info_entry_t *interface, con
     if (!neighbour) {
         return false;
     }
+
     ws_neighbor_class_entry_t *ws_neighbor = ws_neighbor_class_entry_get(&interface->ws_info->neighbor_storage, neighbour->index);
     ws_neighbor->negative_aro_send = true;
-    neighbour->lifetime = WS_NEIGHBOR_NOT_TRUSTED_LINK_MIN_TIMEOUT; //Remove anyway if Packet is freed before MAC push
+    neighbour->lifetime = WS_NEIGHBOR_TEMPORARY_LINK_MIN_TIMEOUT_SMALL; //Remove anyway if Packet is freed before MAC push
     return true;
-}
-
-void ws_common_etx_validate(protocol_interface_info_entry_t *interface, mac_neighbor_table_entry_t *neigh)
-{
-    etx_storage_t *etx_entry = etx_storage_entry_get(interface->id, neigh->index);
-
-    if (neigh->nud_active || !neigh->trusted_device || !etx_entry || etx_entry->etx_samples) {
-        return; //Do not trig Second NS if Active NUD already, not trusted or ETX samples already done
-    }
-
-    ws_bootstrap_etx_accelerate(interface, neigh);
 }
 
 uint32_t ws_common_version_lifetime_get(uint8_t config)
 {
     uint32_t lifetime;
-    if (config == NETWORK_SIZE_SMALL) {
+    if (config == NETWORK_SIZE_SMALL || config == NETWORK_SIZE_CERTIFICATE) {
         lifetime = PAN_VERSION_SMALL_NETWORK_LIFETIME;
     } else if (config == NETWORK_SIZE_MEDIUM) {
         lifetime = PAN_VERSION_MEDIUM_NETWORK_LIFETIME;
@@ -456,7 +474,7 @@ uint32_t ws_common_version_lifetime_get(uint8_t config)
 uint32_t ws_common_version_timeout_get(uint8_t config)
 {
     uint32_t lifetime;
-    if (config == NETWORK_SIZE_SMALL) {
+    if (config == NETWORK_SIZE_SMALL || config == NETWORK_SIZE_CERTIFICATE) {
         lifetime = PAN_VERSION_SMALL_NETWORK_TIMEOUT;
     } else if (config == NETWORK_SIZE_MEDIUM) {
         lifetime = PAN_VERSION_MEDIUM_NETWORK_TIMEOUT;

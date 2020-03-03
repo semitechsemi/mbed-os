@@ -6,7 +6,7 @@
 *
 ********************************************************************************
 * \copyright
-* Copyright 2018-2019 Cypress Semiconductor Corporation
+* Copyright 2018-2020 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,15 +23,9 @@
 *******************************************************************************/
 
 /**
-* \addtogroup group_hal_hw_resources PSoC 6 Hardware Resources
+* \addtogroup group_hal_psoc6_hw_types
 * \ingroup group_hal_psoc6
 * \{
-* Struct definitions for configuration resources in the PDL.
-*
-* \defgroup group_hal_hw_resources_macros Macros
-* \defgroup group_hal_hw_resources_functions Functions
-* \defgroup group_hal_hw_resources_data_structures Data Structures
-* \defgroup group_hal_hw_resources_enums Enumerated Types
 */
 
 #pragma once
@@ -39,11 +33,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/**
-* \addtogroup group_hal_hw_resources_enums
-* \{
-*/
 
 /* NOTE: Any changes made to this enum must also be made to the hardware manager resource tracking */
 /** Resource types that the hardware manager supports */
@@ -57,6 +46,7 @@ typedef enum
     CYHAL_RSC_CRYPTO,    /*!< Crypto hardware accelerator */
     CYHAL_RSC_DAC,       /*!< Digital to analog converter */
     CYHAL_RSC_DMA,       /*!< DMA controller */
+    CYHAL_RSC_DW,        /*!< Datawire DMA controller */
     CYHAL_RSC_GPIO,      /*!< General purpose I/O pin */
     CYHAL_RSC_I2S,       /*!< I2S communications block */
     CYHAL_RSC_LCD,       /*!< Segment LCD controller */
@@ -74,15 +64,9 @@ typedef enum
     CYHAL_RSC_INVALID,   /*!< Placeholder for invalid type */
 } cyhal_resource_t;
 
-/** \} group_hal_hw_resources_enums */
-
-
 /**
-* \addtogroup group_hal_hw_resources_data_structures
-* \{
-*/
-
-/** Represents a particular instance of a resource on the chip */
+  * @brief Represents a particular instance of a resource on the chip
+  */
 typedef struct
 {
     cyhal_resource_t type;      //!< The resource block type
@@ -93,10 +77,8 @@ typedef struct
     uint8_t          channel_num;
 } cyhal_resource_inst_t;
 
-/** \} group_hal_hw_resources_data_structures */
-
 #if defined(__cplusplus)
 }
 #endif /* __cplusplus */
 
-/** \} group_hal_hw_resources */
+/** \} group_hal_psoc6_hw_types */

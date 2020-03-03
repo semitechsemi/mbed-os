@@ -1,6 +1,7 @@
 
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2012 ARM Limited
+ * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,12 +37,13 @@
 #include "rtos/EventFlags.h"
 #include "rtos/ConditionVariable.h"
 
-/** \ingroup mbed-os-public */
-/** \addtogroup rtos-public-api */
-/** @{*/
+
+/** \defgroup rtos-public-api RTOS
+ * \ingroup mbed-os-public
+ */
+
 #ifndef MBED_NO_GLOBAL_USING_DIRECTIVE
 using namespace rtos;
 #endif
-/** @}*/
 
 #endif

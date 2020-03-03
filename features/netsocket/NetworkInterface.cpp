@@ -32,19 +32,24 @@ const char *NetworkInterface::get_mac_address()
     return 0;
 }
 
-const char *NetworkInterface::get_ip_address()
+nsapi_error_t NetworkInterface::get_ip_address(SocketAddress *)
 {
-    return 0;
+    return NSAPI_ERROR_UNSUPPORTED;
 }
 
-const char *NetworkInterface::get_netmask()
+nsapi_error_t NetworkInterface::get_ipv6_link_local_address(SocketAddress *address)
 {
-    return 0;
+    return NSAPI_ERROR_UNSUPPORTED;
 }
 
-const char *NetworkInterface::get_gateway()
+nsapi_error_t NetworkInterface::get_netmask(SocketAddress *)
 {
-    return 0;
+    return NSAPI_ERROR_UNSUPPORTED;
+}
+
+nsapi_error_t NetworkInterface::get_gateway(SocketAddress *)
+{
+    return NSAPI_ERROR_UNSUPPORTED;
 }
 
 char *NetworkInterface::get_interface_name(char *interface_name)
@@ -52,7 +57,7 @@ char *NetworkInterface::get_interface_name(char *interface_name)
     return 0;
 }
 
-nsapi_error_t NetworkInterface::set_network(const char *ip_address, const char *netmask, const char *gateway)
+nsapi_error_t NetworkInterface::set_network(const SocketAddress &ip_address, const SocketAddress &netmask, const SocketAddress &gateway)
 {
     return NSAPI_ERROR_UNSUPPORTED;
 }
@@ -71,9 +76,19 @@ nsapi_error_t NetworkInterface::gethostbyname(const char *name, SocketAddress *a
     return get_stack()->gethostbyname(name, address, version, interface_name);
 }
 
+nsapi_value_or_error_t NetworkInterface::getaddrinfo(const char *hostname, SocketAddress *hints, SocketAddress **res, const char *interface_name)
+{
+    return get_stack()->getaddrinfo(hostname, hints, res, interface_name);
+}
+
 nsapi_value_or_error_t NetworkInterface::gethostbyname_async(const char *host, hostbyname_cb_t callback, nsapi_version_t version, const char *interface_name)
 {
     return get_stack()->gethostbyname_async(host, callback, version, interface_name);
+}
+
+nsapi_value_or_error_t NetworkInterface::getaddrinfo_async(const char *hostname, SocketAddress *hints, hostbyname_cb_t callback, const char *interface_name)
+{
+    return get_stack()->getaddrinfo_async(hostname, hints, callback, interface_name);
 }
 
 nsapi_error_t NetworkInterface::gethostbyname_async_cancel(int id)
@@ -144,6 +159,7 @@ NetworkInterface::~NetworkInterface()
     ns_list_foreach_safe(iface_eventlist_entry_t, entry, event_list) {
         if (entry->iface == this) {
             ns_list_remove(event_list, entry);
+            delete entry;
         }
     }
 }

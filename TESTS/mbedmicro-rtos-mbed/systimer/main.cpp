@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2017 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +21,7 @@
 #include "utest.h"
 #include "ticker_api.h"
 
-extern "C" {
-#include "rtx_lib.h"
-}
-#include "platform/SysTimer.h"
+#include "platform/source/SysTimer.h"
 
 #define TEST_TICKS 42
 #define TEST_TICK_US (TEST_TICKS * 1000)

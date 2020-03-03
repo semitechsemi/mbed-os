@@ -24,7 +24,7 @@
 
 using namespace mbed;
 
-static const intptr_t cellular_properties[AT_CellularBase::PROPERTY_MAX] = {
+static const intptr_t cellular_properties[AT_CellularDevice::PROPERTY_MAX] = {
     AT_CellularNetwork::RegistrationModeDisable,// C_EREG
     AT_CellularNetwork::RegistrationModeLAC,    // C_GREG
     AT_CellularNetwork::RegistrationModeDisable,// C_REG
@@ -40,46 +40,46 @@ static const intptr_t cellular_properties[AT_CellularBase::PROPERTY_MAX] = {
     0,  // PROPERTY_IPV4V6_STACK
     0,  // PROPERTY_NON_IP_PDP_TYPE
     1,  // PROPERTY_AT_CGEREP
+    1,  // PROPERTY_AT_COPS_FALLBACK_AUTO
+    6,  // PROPERTY_SOCKET_COUNT
+    1,  // PROPERTY_IP_TCP
+    1,  // PROPERTY_IP_UDP
+    0,  // PROPERTY_AT_SEND_DELAY
 };
 
 QUECTEL_M26::QUECTEL_M26(FileHandle *fh) : AT_CellularDevice(fh)
 {
-    AT_CellularBase::set_cellular_properties(cellular_properties);
+    set_cellular_properties(cellular_properties);
 }
 
 nsapi_error_t QUECTEL_M26::get_sim_state(SimState &state)
 {
     char buf[13];
 
-    _at->lock();
-    _at->cmd_start("AT+CPIN?");
-    _at->cmd_stop();
-    _at->resp_start("+CPIN:");
-    if (_at->info_resp()) {
-        _at->read_string(buf, 13);
-        tr_debug("CPIN: %s", buf);
+    _at.lock();
+    nsapi_error_t err = _at.at_cmd_str("+CPIN", "?", buf, 13);
+    tr_debug("CPIN: %s", buf);
+    _at.unlock();
 
-        if (memcmp(buf, "READY", 5) == 0) {
-            state = SimStateReady;
-        } else if (memcmp(buf, "SIM PIN", 7) == 0) {
-            state = SimStatePinNeeded;
-        } else if (memcmp(buf, "SIM PUK", 7) == 0) {
-            state = SimStatePukNeeded;
-        } else if (memcmp(buf, "PH_SIM PIN", 10) == 0) {
-            state = SimStatePinNeeded;
-        } else if (memcmp(buf, "PH_SIM PUK", 10) == 0) {
-            state = SimStatePukNeeded;
-        } else if (memcmp(buf, "SIM PIN2", 8) == 0) {
-            state = SimStatePinNeeded;
-        } else if (memcmp(buf, "SIM PUK2", 8) == 0) {
-            state = SimStatePukNeeded;
-        } else {
-            state = SimStateUnknown; // SIM may not be ready yet
-        }
-
+    if (memcmp(buf, "READY", 5) == 0) {
+        state = SimStateReady;
+    } else if (memcmp(buf, "SIM PIN", 7) == 0) {
+        state = SimStatePinNeeded;
+    } else if (memcmp(buf, "SIM PUK", 7) == 0) {
+        state = SimStatePukNeeded;
+    } else if (memcmp(buf, "PH_SIM PIN", 10) == 0) {
+        state = SimStatePinNeeded;
+    } else if (memcmp(buf, "PH_SIM PUK", 10) == 0) {
+        state = SimStatePukNeeded;
+    } else if (memcmp(buf, "SIM PIN2", 8) == 0) {
+        state = SimStatePinNeeded;
+    } else if (memcmp(buf, "SIM PUK2", 8) == 0) {
+        state = SimStatePukNeeded;
+    } else {
+        state = SimStateUnknown; // SIM may not be ready yet
     }
-    _at->resp_stop();
-    return _at->unlock_return_error();
+
+    return err;
 }
 
 AT_CellularContext *QUECTEL_M26::create_context_impl(ATHandler &at, const char *apn, bool cp_req, bool nonip_req)
@@ -89,21 +89,15 @@ AT_CellularContext *QUECTEL_M26::create_context_impl(ATHandler &at, const char *
 
 nsapi_error_t QUECTEL_M26::shutdown()
 {
-    _at->lock();
-    _at->cmd_start("AT+QPOWD=0");
-    _at->cmd_stop();
-    _at->resp_start();
-    _at->resp_stop();
-
-    return _at->unlock_return_error();;
+    return _at.at_cmd_discard("+QPOWD", "=0");
 }
 
 
 #if MBED_CONF_QUECTEL_M26_PROVIDE_DEFAULT
-#include "UARTSerial.h"
+#include "drivers/BufferedSerial.h"
 CellularDevice *CellularDevice::get_default_instance()
 {
-    static UARTSerial serial(MBED_CONF_QUECTEL_M26_TX, MBED_CONF_QUECTEL_M26_RX, MBED_CONF_QUECTEL_M26_BAUDRATE);
+    static BufferedSerial serial(MBED_CONF_QUECTEL_M26_TX, MBED_CONF_QUECTEL_M26_RX, MBED_CONF_QUECTEL_M26_BAUDRATE);
 #if defined (MBED_CONF_QUECTEL_M26_RTS) && defined(MBED_CONF_QUECTEL_M26_CTS)
     tr_debug("QUECTEL_M26 flow control: RTS %d CTS %d", MBED_CONF_QUECTEL_M26_RTS, MBED_CONF_QUECTEL_M26_CTS);
     serial.set_flow_control(SerialBase::RTSCTS, MBED_CONF_QUECTEL_M26_RTS, MBED_CONF_QUECTEL_M26_CTS);

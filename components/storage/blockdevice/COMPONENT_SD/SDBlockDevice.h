@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2013 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +21,36 @@
 /* If the target has no SPI support, then SD Card is not supported. */
 #if DEVICE_SPI
 
-#include "BlockDevice.h"
+#include "features/storage/blockdevice/BlockDevice.h"
 #include "drivers/SPI.h"
 #include "drivers/Timer.h"
 #include "drivers/MbedCRC.h"
 #include "drivers/DigitalOut.h"
 #include "platform/platform.h"
 #include "platform/PlatformMutex.h"
+#include "hal/static_pinmap.h"
+
+#ifndef MBED_CONF_SD_SPI_MOSI
+#define MBED_CONF_SD_SPI_MOSI NC
+#endif
+#ifndef MBED_CONF_SD_SPI_MISO
+#define MBED_CONF_SD_SPI_MISO NC
+#endif
+#ifndef MBED_CONF_SD_SPI_CLK
+#define MBED_CONF_SD_SPI_CLK NC
+#endif
+#ifndef MBED_CONF_SD_SPI_CS
+#define MBED_CONF_SD_SPI_CS NC
+#endif
+#ifndef MBED_CONF_SD_INIT_FREQUENCY
+#define MBED_CONF_SD_INIT_FREQUENCY 100000
+#endif
+#ifndef MBED_CONF_SD_TRX_FREQUENCY
+#define MBED_CONF_SD_TRX_FREQUENCY  1000000
+#endif
+#ifndef MBED_CONF_SD_CRC_ENABLED
+#define MBED_CONF_SD_CRC_ENABLED 0
+#endif
 
 /** SDBlockDevice class
  *
@@ -34,7 +58,7 @@
  */
 class SDBlockDevice : public mbed::BlockDevice {
 public:
-    /** Creates an SDBlockDevice on a SPI bus specified by pins
+    /** Creates an SDBlockDevice on a SPI bus specified by pins (using dynamic pin-map)
      *
      *  @param mosi     SPI master out, slave in pin
      *  @param miso     SPI master in, slave out pin
@@ -43,7 +67,24 @@ public:
      *  @param hz       Clock speed of the SPI bus (defaults to 1MHz)
      *  @param crc_on   Enable cyclic redundancy check (defaults to disabled)
      */
-    SDBlockDevice(PinName mosi, PinName miso, PinName sclk, PinName cs, uint64_t hz = 1000000, bool crc_on = 0);
+    SDBlockDevice(PinName mosi = MBED_CONF_SD_SPI_MOSI,
+                  PinName miso = MBED_CONF_SD_SPI_MISO,
+                  PinName sclk = MBED_CONF_SD_SPI_CLK,
+                  PinName cs = MBED_CONF_SD_SPI_CS,
+                  uint64_t hz = MBED_CONF_SD_TRX_FREQUENCY,
+                  bool crc_on = MBED_CONF_SD_CRC_ENABLED);
+
+    /** Creates an SDBlockDevice on a SPI bus specified by pins (using static pin-map)
+     *
+     *  @param spi_pinmap Static SPI pin-map
+     *  @param hz         Clock speed of the SPI bus (defaults to 1MHz)
+     *  @param crc_on     Enable cyclic redundancy check (defaults to disabled)
+     */
+    SDBlockDevice(const spi_pinmap_t &spi_pinmap,
+                  PinName cs = MBED_CONF_SD_SPI_CS,
+                  uint64_t hz = MBED_CONF_SD_TRX_FREQUENCY,
+                  bool crc_on = MBED_CONF_SD_CRC_ENABLED);
+
     virtual ~SDBlockDevice();
 
     /** Initialize a block device
@@ -256,8 +297,6 @@ private:
 
 #if MBED_CONF_SD_CRC_ENABLED
     bool _crc_on;
-    mbed::MbedCRC<POLY_7BIT_SD, 7> _crc7;
-    mbed::MbedCRC<POLY_16BIT_CCITT, 16> _crc16;
 #endif
 };
 

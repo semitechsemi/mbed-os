@@ -49,9 +49,8 @@ template<>
 struct is_unsigned<unsigned long long> {
     static const bool value = true;
 };
-};
+}
 
-/** \ingroup mbed-os-public */
 /** \addtogroup platform-public-api */
 /** @{*/
 /**

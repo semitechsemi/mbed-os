@@ -28,7 +28,7 @@
 using namespace events;
 using namespace mbed;
 
-static const intptr_t cellular_properties[AT_CellularBase::PROPERTY_MAX] = {
+static const intptr_t cellular_properties[AT_CellularDevice::PROPERTY_MAX] = {
     AT_CellularNetwork::RegistrationModeLAC,        // C_EREG
     AT_CellularNetwork::RegistrationModeDisable,    // C_GREG
     AT_CellularNetwork::RegistrationModeDisable,    // C_REG
@@ -40,37 +40,41 @@ static const intptr_t cellular_properties[AT_CellularBase::PROPERTY_MAX] = {
     1,  // AT_CMGF
     1,  // AT_CSDH
     1,  // PROPERTY_IPV4_STACK
-    0,  // PROPERTY_IPV6_STACK
+    1,  // PROPERTY_IPV6_STACK
     0,  // PROPERTY_IPV4V6_STACK
-    0,  // PROPERTY_NON_IP_PDP_TYPE
-    0,  // PROPERTY_AT_CGEREP
+    1,  // PROPERTY_NON_IP_PDP_TYPE
+    0,  // PROPERTY_AT_CGEREP,
+    0,  // PROPERTY_AT_COPS_FALLBACK_AUTO
+    7,  // PROPERTY_SOCKET_COUNT
+    1,  // PROPERTY_IP_TCP
+    1,  // PROPERTY_IP_UDP
+    0,  // PROPERTY_AT_SEND_DELAY
 };
 
 QUECTEL_BC95::QUECTEL_BC95(FileHandle *fh) : AT_CellularDevice(fh)
 {
-    AT_CellularBase::set_cellular_properties(cellular_properties);
+    set_cellular_properties(cellular_properties);
 }
 
 nsapi_error_t QUECTEL_BC95::get_sim_state(SimState &state)
 {
-    _at->lock();
-    _at->flush();
-    _at->cmd_start("AT+NCCID?");
-    _at->cmd_stop();
-    _at->resp_start("+NCCID:");
-    if (_at->info_resp()) {
-        state = SimStateReady;
-    } else {
+    _at.lock();
+    _at.flush();
+    nsapi_error_t err = _at.at_cmd_discard("+NCCID", "?");
+    _at.unlock();
+
+    state = SimStateReady;
+    if (err != NSAPI_ERROR_OK) {
         tr_warn("SIM not readable.");
-        state = SimStateUnknown; // SIM may not be ready yet
+        state = SimStateUnknown;
     }
-    _at->resp_stop();
-    return _at->unlock_return_error();
+
+    return err;
 }
 
 AT_CellularNetwork *QUECTEL_BC95::open_network_impl(ATHandler &at)
 {
-    return new QUECTEL_BC95_CellularNetwork(at);
+    return new QUECTEL_BC95_CellularNetwork(at, *this);
 }
 
 AT_CellularContext *QUECTEL_BC95::create_context_impl(ATHandler &at, const char *apn, bool cp_req, bool nonip_req)
@@ -80,30 +84,39 @@ AT_CellularContext *QUECTEL_BC95::create_context_impl(ATHandler &at, const char 
 
 AT_CellularInformation *QUECTEL_BC95::open_information_impl(ATHandler &at)
 {
-    return new QUECTEL_BC95_CellularInformation(at);
+    return new QUECTEL_BC95_CellularInformation(at, *this);
 }
 
 nsapi_error_t QUECTEL_BC95::init()
 {
     setup_at_handler();
 
-    _at->lock();
-    _at->flush();
-    _at->cmd_start("AT");
-    _at->cmd_stop_read_resp();
+    _at.lock();
+    _at.flush();
+    nsapi_error_t err = _at.at_cmd_discard("", "");  //Send AT
+    if (!err) {
+        err = _at.at_cmd_discard("+CMEE", "=1"); // verbose responses
+    }
+    if (!err) {
+        err = _at.at_cmd_discard("+CFUN", "=", "%d", 1);
+    }
+    if (!err) {
+        err = _at.get_last_error();
+    }
+    _at.unlock();
+    return err;
+}
 
-    _at->cmd_start("AT+CMEE="); // verbose responses
-    _at->write_int(1);
-    _at->cmd_stop_read_resp();
-
-    return _at->unlock_return_error();
+nsapi_error_t QUECTEL_BC95::set_baud_rate_impl(int baud_rate)
+{
+    return _at.at_cmd_discard("+NATSPEED", "=", "%d%d%d%d%d%d%d", baud_rate, 30, 0, 2, 1, 0, 0);
 }
 
 #if MBED_CONF_QUECTEL_BC95_PROVIDE_DEFAULT
-#include "UARTSerial.h"
+#include "drivers/BufferedSerial.h"
 CellularDevice *CellularDevice::get_default_instance()
 {
-    static UARTSerial serial(MBED_CONF_QUECTEL_BC95_TX, MBED_CONF_QUECTEL_BC95_RX, MBED_CONF_QUECTEL_BC95_BAUDRATE);
+    static BufferedSerial serial(MBED_CONF_QUECTEL_BC95_TX, MBED_CONF_QUECTEL_BC95_RX, MBED_CONF_QUECTEL_BC95_BAUDRATE);
 #if defined(MBED_CONF_QUECTEL_BC95_RTS) && defined(MBED_CONF_QUECTEL_BC95_CTS)
     tr_debug("QUECTEL_BC95 flow control: RTS %d CTS %d", MBED_CONF_QUECTEL_BC95_RTS, MBED_CONF_QUECTEL_BC95_CTS);
     serial.set_flow_control(SerialBase::RTSCTS, MBED_CONF_QUECTEL_BC95_RTS, MBED_CONF_QUECTEL_BC95_CTS);

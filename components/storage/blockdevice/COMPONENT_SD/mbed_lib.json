@@ -9,7 +9,8 @@
         "CMD_TIMEOUT": 10000,
         "CMD0_IDLE_STATE_RETRIES": 5,
         "INIT_FREQUENCY": 100000,
-        "CRC_ENABLED": 1,
+        "TRX_FREQUENCY": 1000000,
+        "CRC_ENABLED": 0,
         "TEST_BUFFER": 8192
     },
     "target_overrides": {
@@ -171,6 +172,12 @@
             "SPI_MISO": "D12",
             "SPI_CLK": "D13",
             "SPI_CS": "D10"
+        },
+        "ARCH_MAX": {
+            "SPI_MOSI": "PC_3",
+            "SPI_MISO": "PC_2",
+            "SPI_CLK":  "PB_10",
+            "SPI_CS":   "PE_2"
         }
     }
 }

@@ -20,7 +20,15 @@
 
 #ifdef HAVE_WS
 
+typedef enum {
+    AUTH_RESULT_OK = 0,                    // Successful
+    AUTH_RESULT_ERR_NO_MEM = -1,           // No memory
+    AUTH_RESULT_ERR_TX_NO_ACK = -2,        // No acknowledge was received
+    AUTH_RESULT_ERR_UNSPEC = -3            // Other reason
+} auth_result_e;
+
 struct nvm_tlv_entry;
+
 /**
  * ws_pae_controller_set_target sets EAPOL target for PAE supplicant
  *
@@ -44,6 +52,17 @@ int8_t ws_pae_controller_set_target(protocol_interface_info_entry_t *interface_p
  *
  */
 int8_t ws_pae_controller_authenticate(protocol_interface_info_entry_t *interface_ptr);
+
+/**
+ * ws_pae_controller_bootstrap_done indicates to PAE controller that bootstrap is ready
+ *
+ * \param interface_ptr interface
+ *
+ * \return < 0 failure
+ * \return >= 0 success
+ *
+ */
+int8_t ws_pae_controller_bootstrap_done(protocol_interface_info_entry_t *interface_ptr);
 
 /**
  * ws_pae_controller_authenticator_start start PAE authenticator
@@ -115,6 +134,28 @@ int8_t ws_pae_controller_stop(protocol_interface_info_entry_t *interface_ptr);
 int8_t ws_pae_controller_delete(protocol_interface_info_entry_t *interface_ptr);
 
 /**
+ * ws_pae_controller_timing_adjust Adjust retries and timings of the security protocols
+ *
+ * Timing value is a generic number between 0 to 32 that goes from fast and
+ * reactive network to low bandwidth and long latency.
+ *
+ * example value definitions:
+ * 0-8 very fast network
+ * 9-16 medium network
+ * 16-24 slow network
+ * 25-32 extremely slow network
+ *
+ * There is no need to have lots variations in every layer if protocol is not very active in any case.
+ *
+ * \param timing Timing value.
+ *
+ * \return < 0 failure
+ * \return >= 0 success
+ *
+ */
+int8_t ws_pae_controller_timing_adjust(uint8_t timing);
+
+/**
  * ws_pae_controller_certificate_chain_set set certificate chain
  *
  * \param chain certificate chain
@@ -124,6 +165,26 @@ int8_t ws_pae_controller_delete(protocol_interface_info_entry_t *interface_ptr);
  *
  */
 int8_t ws_pae_controller_certificate_chain_set(const arm_certificate_chain_entry_s *chain);
+
+/**
+ * ws_pae_controller_own_certificate_add add own certificate to certificate chain
+ *
+ * \param cert own certificate
+ *
+ * \return < 0 failure
+ * \return >= 0 success
+ *
+ */
+int8_t ws_pae_controller_own_certificate_add(const arm_certificate_entry_s *cert);
+
+/**
+ * ws_pae_controller_own_certificates_remove removes own certificates
+ *
+ * \return < 0 failure
+ * \return >= 0 success
+ *
+ */
+int8_t ws_pae_controller_own_certificates_remove(void);
 
 /**
  * ws_pae_controller_trusted_certificate_add add trusted certificate
@@ -146,6 +207,15 @@ int8_t ws_pae_controller_trusted_certificate_add(const arm_certificate_entry_s *
  *
  */
 int8_t ws_pae_controller_trusted_certificate_remove(const arm_certificate_entry_s *cert);
+
+/**
+ * ws_pae_controller_trusted_certificates_remove removes trusted certificates
+ *
+ * \return < 0 failure
+ * \return >= 0 success
+ *
+ */
+int8_t ws_pae_controller_trusted_certificates_remove(void);
 
 /**
  * ws_pae_controller_certificate_revocation_list_add add certification revocation list
@@ -294,6 +364,30 @@ int8_t ws_pae_controller_node_keys_remove(int8_t interface_id, uint8_t *eui_64);
 int8_t ws_pae_controller_node_access_revoke_start(int8_t interface_id);
 
 /**
+ * ws_pae_controller_node_limit_set set node limit
+ *
+ * \param interface_id interface identifier
+ * \param limit limit for nodes
+ *
+ * \return < 0 failure
+ * \return >= 0 success
+ *
+ */
+int8_t ws_pae_controller_node_limit_set(int8_t interface_id, uint16_t limit);
+
+/**
+ * ws_pae_controller_ext_certificate_validation_set enable or disable extended certificate validation
+ *
+ * \param interface_ptr interface
+ * \param enabled       true to enable extended validation, false to disable
+ *
+ * \return < 0 failure
+ * \return >= 0 success
+ *
+ */
+int8_t ws_pae_controller_ext_certificate_validation_set(int8_t interface_id, bool enabled);
+
+/**
  * ws_pae_controller_active_key_update update active key (test interface)
  *
  * \param interface_id interface identifier
@@ -381,9 +475,10 @@ typedef void ws_pae_controller_nw_send_key_index_set(protocol_interface_info_ent
  *
  * \param interface_ptr interface
  * \param counter frame counter
+ * \param slot key slot (MAC key descriptor), from 0 to 4
  *
  */
-typedef void ws_pae_controller_nw_frame_counter_set(protocol_interface_info_entry_t *interface_ptr, uint32_t counter);
+typedef void ws_pae_controller_nw_frame_counter_set(protocol_interface_info_entry_t *interface_ptr, uint32_t counter, uint8_t slot);
 
 /**
  * ws_pae_controller_nw_frame_counter_read network frame counter read callback
@@ -392,16 +487,17 @@ typedef void ws_pae_controller_nw_frame_counter_set(protocol_interface_info_entr
  * \param counter frame counter
  *
  */
-typedef void ws_pae_controller_nw_frame_counter_read(protocol_interface_info_entry_t *interface_ptr, uint32_t *counter);
+typedef void ws_pae_controller_nw_frame_counter_read(protocol_interface_info_entry_t *interface_ptr, uint32_t *counter, uint8_t slot);
 
 /**
  * ws_pae_controller_auth_completed authentication completed callback
  *
  * \param interface_ptr interface
- * \param success true if authentication was successful
+ * \param result result, either ok or failure reason
+ * \param target_eui_64 EAPOL target in case of failure or NULL
  *
  */
-typedef void ws_pae_controller_auth_completed(protocol_interface_info_entry_t *interface_ptr, bool success);
+typedef void ws_pae_controller_auth_completed(protocol_interface_info_entry_t *interface_ptr, auth_result_e result, uint8_t *target_eui_64);
 
 /**
  * ws_pae_controller_pan_ver_increment PAN version increment callback
@@ -437,7 +533,6 @@ int8_t ws_pae_controller_cb_register(protocol_interface_info_entry_t *interface_
  */
 void ws_pae_controller_fast_timer(uint16_t ticks);
 
-
 /**
  * ws_pae_controller_slow_timer PAE controller slow timer call
  *
@@ -447,6 +542,14 @@ void ws_pae_controller_fast_timer(uint16_t ticks);
 void ws_pae_controller_slow_timer(uint16_t seconds);
 
 struct nvm_tlv_entry *ws_pae_controller_nvm_tlv_get(protocol_interface_info_entry_t *interface_ptr);
+
+/**
+ * ws_pae_controller_forced_gc PAE controller garbage cleanup callback
+ *
+ * \param full_gc Full cleanup (true for critical garbage cleanup)
+ *
+ */
+void ws_pae_controller_forced_gc(bool full_gc);
 
 #else
 
@@ -469,6 +572,8 @@ struct nvm_tlv_entry *ws_pae_controller_nvm_tlv_get(protocol_interface_info_entr
 #define ws_pae_controller_delete(interface_ptr)
 #define ws_pae_controller_cb_register(interface_ptr, completed, nw_key_set, nw_key_clear, nw_send_key_index_set, pan_ver_increment) 1
 #define ws_pae_controller_nvm_tlv_get(interface_ptr) NULL
+
+#define ws_pae_controller_forced_gc NULL
 
 #endif
 

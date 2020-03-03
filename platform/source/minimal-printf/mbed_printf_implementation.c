@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2017 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,59 +27,10 @@
 /***************************/
 #if TARGET_LIKE_MBED
 
-#define CONSOLE_OUTPUT_UART     1
-#define CONSOLE_OUTPUT_SWO      2
-#define mbed_console_concat_(x) CONSOLE_OUTPUT_##x
-#define mbed_console_concat(x) mbed_console_concat_(x)
-#define CONSOLE_OUTPUT mbed_console_concat(MBED_CONF_PLATFORM_MINIMAL_PRINTF_CONSOLE_OUTPUT)
-
 #if MBED_CONF_PLATFORM_STDIO_CONVERT_NEWLINES
 static char mbed_stdio_out_prev = 0;
 #endif
 
-#if CONSOLE_OUTPUT == CONSOLE_OUTPUT_UART
-#if DEVICE_SERIAL
-/*
- Serial initialization and new line replacement is a direct copy from mbed_retarget.cpp
- If the static modifier were to be removed, this part of the code would not be necessary.
-*/
-#include "hal/serial_api.h"
-
-static serial_t stdio_uart = { 0 };
-
-/* module variable for keeping track of initialization */
-static bool not_initialized = true;
-
-static void init_serial()
-{
-    if (not_initialized) {
-        not_initialized = false;
-
-        serial_init(&stdio_uart, STDIO_UART_TX, STDIO_UART_RX);
-#if MBED_CONF_PLATFORM_STDIO_BAUD_RATE
-        serial_baud(&stdio_uart, MBED_CONF_PLATFORM_STDIO_BAUD_RATE);
-#endif
-    }
-}
-
-#define MBED_INITIALIZE_PRINT(x) { init_serial(); }
-#define MBED_PRINT_CHARACTER(x) { serial_putc(&stdio_uart, x); }
-
-#else
-
-#define MBED_INITIALIZE_PRINT(x)
-#define MBED_PRINT_CHARACTER(x)
-
-#endif // if DEVICE_SERIAL
-
-#elif CONSOLE_OUTPUT == CONSOLE_OUTPUT_SWO
-
-#include "hal/itm_api.h"
-
-#define MBED_INITIALIZE_PRINT(x) { mbed_itm_init(); }
-#define MBED_PRINT_CHARACTER(x) { mbed_itm_send(ITM_PORT_SWO, x); }
-
-#endif // if CONSOLE_OUTPUT
 
 /***************************/
 /* Linux                   */
@@ -88,8 +40,6 @@ static void init_serial()
 #define MBED_CONF_PLATFORM_MINIMAL_PRINTF_ENABLE_FLOATING_POINT 1
 #define MBED_CONF_PLATFORM_MINIMAL_PRINTF_SET_FLOATING_POINT_MAX_DECIMALS 6
 #define MBED_CONF_PLATFORM_MINIMAL_PRINTF_ENABLE_64_BIT 1
-#define MBED_INITIALIZE_PRINT(x) { ; }
-#define MBED_PRINT_CHARACTER(x) { printf("%c", x); }
 #endif
 
 #ifndef MBED_CONF_PLATFORM_MINIMAL_PRINTF_ENABLE_FLOATING_POINT
@@ -177,14 +127,7 @@ static void mbed_minimal_putchar(char *buffer, size_t length, int *result, char 
             if (buffer) {
                 buffer[*result] = data;
             } else {
-#if MBED_CONF_PLATFORM_MINIMAL_PRINTF_ENABLE_FILE_STREAM
-                if (stream) {
-                    fputc(data, (FILE *) stream);
-                } else
-#endif
-                {
-                    MBED_PRINT_CHARACTER(data);
-                }
+                fputc(data, stream);
             }
         }
         /* increment 'result' even if data was not written. This ensures that
@@ -434,9 +377,6 @@ static void mbed_minimal_formatted_string_string(char *buffer, size_t length, in
  */
 int mbed_minimal_formatted_string(char *buffer, size_t length, const char *format, va_list arguments, FILE *stream)
 {
-    /* initialize output if needed */
-    MBED_INITIALIZE_PRINT();
-
     int result = 0;
     bool empty_buffer = false;
 
@@ -569,7 +509,7 @@ int mbed_minimal_formatted_string(char *buffer, size_t length, const char *forma
                         value = va_arg(arguments, MBED_SIGNED_NATIVE_TYPE);
                     }
 
-                    /* constrict value based on lenght modifier */
+                    /* constrict value based on length modifier */
                     switch (length_modifier) {
                         case LENGTH_NONE:
                             value = (int) value;
@@ -618,7 +558,7 @@ int mbed_minimal_formatted_string(char *buffer, size_t length, const char *forma
                         value = va_arg(arguments, MBED_UNSIGNED_NATIVE_TYPE);
                     }
 
-                    /* constrict value based on lenght modifier */
+                    /* constrict value based on length modifier */
                     switch (length_modifier) {
                         case LENGTH_NONE:
                             value = (unsigned int) value;
@@ -687,19 +627,14 @@ int mbed_minimal_formatted_string(char *buffer, size_t length, const char *forma
 
                     mbed_minimal_formatted_string_void_pointer(buffer, length, &result, value, stream);
                 } else {
-                    /* write all characters between format beginning and unrecognied modifier */
-                    while (index < next_index) {
-                        mbed_minimal_formatted_string_character(buffer, length, &result, format[index], stream);
-                        index++;
+                    // Unrecognised, or `%%`. Print the `%` that led us in.
+                    mbed_minimal_formatted_string_character(buffer, length, &result, '%', stream);
+                    if (next == '%') {
+                        // Continue printing loop after `%%`
+                        index = next_index;
                     }
-
-                    /* if this is not the end of the string, write unrecognized modifier */
-                    if (next != '\0') {
-                        mbed_minimal_formatted_string_character(buffer, length, &result, format[index], stream);
-                    } else {
-                        /* break out of for loop */
-                        break;
-                    }
+                    // Otherwise we continue the printing loop after the leading `%`, so an
+                    // unrecognised thing like "Blah = %a" will just come out as "Blah = %a"
                 }
             } else
                 /* not a format specifier */

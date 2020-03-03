@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2012 ARM Limited
+ * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +25,7 @@
 #include "platform/mbed_assert.h"
 #include "platform/mbed_critical.h"
 #include "platform/mbed_error.h"
-#include "platform/mbed_os_timer.h"
+#include "platform/source/mbed_os_timer.h"
 
 #include <string.h>
 
@@ -212,8 +213,9 @@ osStatus Semaphore::release(void)
             return osErrorResource;
         }
     } while (!core_util_atomic_cas_s32(&_count, &old_count, old_count + 1));
-#endif
+
     return osOK;
+#endif // MBED_CONF_RTOS_PRESENT
 }
 
 Semaphore::~Semaphore()

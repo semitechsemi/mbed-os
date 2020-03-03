@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2018-2018 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,10 +78,19 @@ struct Qspi {
 
 
 #define READ_1_1_1      MODE_1_1_1, QSPI_CMD_READ_1IO,  QSPI_READ_1IO_DUMMY_CYCLE
+#ifdef QSPI_CMD_READ_1I2O
 #define READ_1_1_2      MODE_1_1_2, QSPI_CMD_READ_1I2O, QSPI_READ_1I2O_DUMMY_CYCLE
+#endif
+#ifdef QSPI_CMD_READ_2IO
 #define READ_1_2_2      MODE_1_2_2, QSPI_CMD_READ_2IO,  QSPI_READ_2IO_DUMMY_CYCLE
+#endif
+#ifdef QSPI_CMD_READ_1I4O
 #define READ_1_1_4      MODE_1_1_4, QSPI_CMD_READ_1I4O, QSPI_READ_1I4O_DUMMY_CYCLE
+#endif
+#ifdef QSPI_CMD_READ_4IO
 #define READ_1_4_4      MODE_1_4_4, QSPI_CMD_READ_4IO,  QSPI_READ_4IO_DUMMY_CYCLE
+#endif
+
 #ifdef QSPI_CMD_READ_DPI
 #define READ_2_2_2      MODE_2_2_2, QSPI_CMD_READ_DPI,  QSPI_READ_2IO_DUMMY_CYCLE
 #endif

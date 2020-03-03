@@ -18,7 +18,7 @@
 #include "CellularStateMachine.h"
 #include "CellularDevice.h"
 #include "CellularLog.h"
-#include "Thread.h"
+#include "CellularInformation.h"
 
 #ifndef MBED_TRACE_MAX_LEVEL
 #define MBED_TRACE_MAX_LEVEL TRACE_LEVEL_INFO
@@ -51,8 +51,8 @@ namespace mbed {
 
 CellularStateMachine::CellularStateMachine(CellularDevice &device, events::EventQueue &queue, CellularNetwork &nw) :
     _cellularDevice(device), _state(STATE_INIT), _next_state(_state), _target_state(_state),
-    _event_status_cb(0), _network(nw), _queue(queue), _queue_thread(0), _sim_pin(0),
-    _retry_count(0), _event_timeout(-1), _event_id(-1), _plmn(0), _command_success(false),
+    _event_status_cb(), _network(nw), _queue(queue), _sim_pin(0), _retry_count(0),
+    _event_timeout(-1), _event_id(-1), _plmn(0), _command_success(false),
     _is_retry(false), _cb_data(), _current_event(CellularDeviceReady), _status(0)
 {
 #if MBED_CONF_CELLULAR_RANDOM_MAX_START_DELAY == 0
@@ -102,12 +102,6 @@ void CellularStateMachine::reset()
 void CellularStateMachine::stop()
 {
     tr_debug("CellularStateMachine stop");
-    if (_queue_thread) {
-        _queue_thread->terminate();
-        delete _queue_thread;
-        _queue_thread = NULL;
-    }
-
     reset();
     _event_id = STM_STOPPED;
 }
@@ -165,6 +159,12 @@ bool CellularStateMachine::open_sim()
     bool sim_ready = state == CellularDevice::SimStateReady;
 
     if (sim_ready) {
+#ifdef MBED_CONF_CELLULAR_CLEAR_ON_CONNECT
+        if (_cellularDevice.clear() != NSAPI_ERROR_OK) {
+            tr_warning("CellularDevice clear failed");
+            return false;
+        }
+#endif
         _cb_data.error = _network.set_registration(_plmn);
         tr_debug("STM: set_registration: %d, plmn: %s", _cb_data.error, _plmn ? _plmn : "NULL");
         if (_cb_data.error) {
@@ -244,8 +244,8 @@ bool CellularStateMachine::get_network_registration(CellularNetwork::Registratio
             break;
     }
 
-    if (is_roaming) {
-        tr_info("Roaming network.");
+    if (is_registered || is_roaming) {
+        tr_info("Roaming %u Registered %u", is_roaming, is_registered);
     }
 
     return true;
@@ -346,7 +346,7 @@ bool CellularStateMachine::device_ready()
 #endif // MBED_CONF_CELLULAR_DEBUG_AT
 
     send_event_cb(CellularDeviceReady);
-    _cellularDevice.set_ready_cb(0);
+    _cellularDevice.set_ready_cb(nullptr);
 
     return true;
 }
@@ -361,15 +361,40 @@ void CellularStateMachine::state_device_ready()
     if (_cb_data.error == NSAPI_ERROR_OK) {
         _cb_data.error = _cellularDevice.init();
         if (_cb_data.error == NSAPI_ERROR_OK) {
+
+#if MBED_CONF_MBED_TRACE_ENABLE
+            CellularInformation *info = _cellularDevice.open_information();
+
+            char *buf = new (std::nothrow) char[2048]; // size from 3GPP TS 27.007
+            if (buf) {
+                if (info->get_manufacturer(buf, 2048) == NSAPI_ERROR_OK) {
+                    tr_info("Modem manufacturer: %s", buf);
+                }
+                if (info->get_model(buf, 2048) == NSAPI_ERROR_OK) {
+                    tr_info("Modem model: %s", buf);
+                }
+                if (info->get_revision(buf, 2048) == NSAPI_ERROR_OK) {
+                    tr_info("Modem revision: %s", buf);
+                }
+                delete[] buf;
+            }
+            _cellularDevice.close_information();
+#endif // MBED_CONF_MBED_TRACE_ENABLE
+
             if (device_ready()) {
                 _status = 0;
                 enter_to_state(STATE_SIM_PIN);
+            } else {
+                tr_warning("Power cycle CellularDevice and restart connecting");
+                (void) _cellularDevice.soft_power_off();
+                (void) _cellularDevice.hard_power_off();
+                _status = 0;
+                _is_retry = true;
+                enter_to_state(STATE_INIT);
             }
-        } else {
-            _status = 0;
-            enter_to_state(STATE_INIT);
         }
     }
+
     if (_cb_data.error != NSAPI_ERROR_OK) {
         if (_retry_count == 0) {
             _cellularDevice.set_ready_cb(callback(this, &CellularStateMachine::device_ready_cb));
@@ -395,7 +420,6 @@ void CellularStateMachine::state_sim_pin()
             retry_state_or_fail();
             return;
         }
-
         if (_network.is_active_context()) { // check if context was already activated
             tr_debug("Active context found.");
             _status |= ACTIVE_PDP_CONTEXT;
@@ -626,21 +650,11 @@ void CellularStateMachine::event()
 
 nsapi_error_t CellularStateMachine::start_dispatch()
 {
-    if (!_queue_thread) {
-        _queue_thread = new rtos::Thread(osPriorityNormal, 2048, NULL, "stm_queue");
-        _event_id = STM_STOPPED;
+    if (_event_id != -1) {
+        tr_warn("Canceling ongoing event (%d)", _event_id);
+        _queue.cancel(_event_id);
     }
-
-    if (_event_id == STM_STOPPED) {
-        if (_queue_thread->start(callback(&_queue, &events::EventQueue::dispatch_forever)) != osOK) {
-            report_failure("Failed to start thread.");
-            stop();
-            return NSAPI_ERROR_NO_MEMORY;
-        }
-    }
-
     _event_id = -1;
-
     return NSAPI_ERROR_OK;
 }
 

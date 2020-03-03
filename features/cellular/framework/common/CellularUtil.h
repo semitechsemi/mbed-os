@@ -22,16 +22,6 @@
 #include <inttypes.h>
 #include "nsapi_types.h"
 
-namespace mbed {
-
-typedef enum pdp_type {
-    DEFAULT_PDP_TYPE = DEFAULT_STACK,
-    IPV4_PDP_TYPE = IPV4_STACK,
-    IPV6_PDP_TYPE = IPV6_STACK,
-    IPV4V6_PDP_TYPE = IPV4V6_STACK,
-    NON_IP_PDP_TYPE
-} pdp_type_t;
-}
 namespace mbed_cellular_util {
 
 // some helper macros
@@ -48,8 +38,9 @@ static const char hex_values[] = "0123456789ABCDEF";
  *  where ax are in decimal format. In this case, function converts decimals to hex with separated with colons.
  *
  *  @param ip       IP address that can be IPv4 or IPv6 in different formats from AT command +CGPADDR. Converted result uses same buffer.
+ *  @return         IP version of the address or NSAPI_UNSPEC if param ip empty or if IPv4 or IPv6 version could not be concluded.
  */
-void convert_ipv6(char *ip);
+nsapi_version_t convert_ipv6(char *ip);
 
 /** Separates IP addresses from the given 'orig' string. 'orig' may contain zero, one or two IP addresses in various formats.
  *  See AT command +CGPIAF from 3GPP TS 27.007 for details. Does also needed conversions for IPv6 addresses.
@@ -137,13 +128,6 @@ uint32_t binary_str_to_uint(const char *binary_string, int binary_string_length)
  *  @return next port number above 49152
  */
 uint16_t get_dynamic_ip_port();
-
-/** Converts the given pdp type in char format to enum pdp_type_t
- *
- *  @param pdp_type     pdp type in string format
- *  @return             converted pdp_type_t enum
- */
-mbed::pdp_type_t string_to_pdp_type(const char *pdp_type);
 
 } // namespace mbed_cellular_util
 

@@ -1,6 +1,7 @@
 
 /* mbed Microcontroller Library
  * Copyright (c) 2018 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +30,13 @@ using namespace utest::v1;
 
 DigitalOut led1(LED1);
 
+// Targets with these cores have their RAM enough size to create threads with bigger stacks
+#if defined(__CORTEX_A9) || defined(__CORTEX_M23) || defined(__CORTEX_M33) || defined(__CORTEX_M7)
+#define MAX_THREAD_STACK        512
+#else
 #define MAX_THREAD_STACK        384
+#endif
+
 #define SAMPLE_TIME             1000    // msec
 #define LOOP_TIME               2000    // msec
 

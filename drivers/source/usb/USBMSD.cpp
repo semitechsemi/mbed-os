@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include "USBMSD.h"
 #include "EndpointResolver.h"
 #include "usb_phy_api.h"
@@ -66,7 +67,11 @@ enum Status {
 
 USBMSD::USBMSD(BlockDevice *bd, bool connect_blocking, uint16_t vendor_id, uint16_t product_id, uint16_t product_release)
     : USBDevice(get_usb_phy(), vendor_id, product_id, product_release),
-      _initialized(false), _media_removed(false), _in_task(&_queue), _out_task(&_queue), _reset_task(&_queue), _control_task(&_queue), _configure_task(&_queue), _bd(bd)
+      _initialized(false), _media_removed(false),
+      _addr(0), _length(0), _mem_ok(false), _block_size(0), _memory_size(0), _block_count(0),
+      _out_ready(false), _in_ready(false), _bulk_out_size(0),
+      _in_task(&_queue), _out_task(&_queue), _reset_task(&_queue), _control_task(&_queue),
+      _configure_task(&_queue), _bd(bd)
 {
     _init();
     if (connect_blocking) {
@@ -78,7 +83,11 @@ USBMSD::USBMSD(BlockDevice *bd, bool connect_blocking, uint16_t vendor_id, uint1
 
 USBMSD::USBMSD(USBPhy *phy, BlockDevice *bd, uint16_t vendor_id, uint16_t product_id, uint16_t product_release)
     : USBDevice(phy, vendor_id, product_id, product_release),
-      _initialized(false), _media_removed(false), _in_task(&_queue), _out_task(&_queue), _reset_task(&_queue), _control_task(&_queue), _configure_task(&_queue), _bd(bd)
+      _initialized(false), _media_removed(false),
+      _addr(0), _length(0), _mem_ok(false), _block_size(0), _memory_size(0), _block_count(0),
+      _out_ready(false), _in_ready(false), _bulk_out_size(0),
+      _in_task(&_queue), _out_task(&_queue), _reset_task(&_queue), _control_task(&_queue),
+      _configure_task(&_queue), _bd(bd)
 {
     _init();
 }
@@ -704,6 +713,15 @@ bool USBMSD::modeSense6(void)
     return true;
 }
 
+bool USBMSD::modeSense10(void)
+{
+    uint8_t sense10[] = { 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+    if (!write(sense10, sizeof(sense10))) {
+        return false;
+    }
+    return true;
+}
+
 void USBMSD::sendCSW()
 {
     _csw.Signature = CSW_Signature;
@@ -823,6 +841,9 @@ void USBMSD::CBWDecode(uint8_t *buf, uint16_t size)
                         _csw.Status = CSW_PASSED;
                         sendCSW();
                         _media_removed = true;
+                        break;
+                    case MODE_SENSE10:
+                        modeSense10();
                         break;
                     default:
                         fail();

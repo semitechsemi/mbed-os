@@ -71,7 +71,8 @@ public:
      *  socket's constructor.
      *
      *  @param stack    Network stack as target for socket.
-     *  @return         0 on success, negative error code on failure.
+     *  @return         NSAPI_ERROR_OK on success, negative error code on failure.
+     *                  See @ref UDPSocket::open.
      */
     virtual nsapi_error_t open(NetworkStack *stack)
     {
@@ -85,17 +86,6 @@ public:
     }
 
     using DTLSSocketWrapper::connect;
-
-    /** Connects TCP socket to a remote host.
-     *
-     *  Initiates a connection to a remote server specified by either
-     *  a domain name or an IP address and a port.
-     *
-     *  @param host     Hostname of the remote host.
-     *  @param port     Port of the remote host.
-     *  @return         0 on success, negative error code on failure.
-     */
-    nsapi_error_t connect(const char *host, uint16_t port);
 
 private:
     UDPSocket _udp_socket;

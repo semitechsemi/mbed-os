@@ -1,5 +1,6 @@
 /* ESP8266Interface Example
  * Copyright (c) 2015 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +18,19 @@
 #ifndef ESP8266_H
 #define ESP8266_H
 
-#if DEVICE_SERIAL && DEVICE_INTERRUPTIN && defined(MBED_CONF_EVENTS_PRESENT) && defined(MBED_CONF_NSAPI_PRESENT) && defined(MBED_CONF_RTOS_PRESENT)
+#if DEVICE_SERIAL && DEVICE_INTERRUPTIN && defined(MBED_CONF_EVENTS_PRESENT) && defined(MBED_CONF_NSAPI_PRESENT) && defined(MBED_CONF_RTOS_API_PRESENT)
 #include <stdint.h>
 
-#include "drivers/UARTSerial.h"
+#include "drivers/BufferedSerial.h"
 #include "features/netsocket/nsapi_types.h"
 #include "features/netsocket/WiFiAccessPoint.h"
 #include "PinNames.h"
 #include "platform/ATCmdParser.h"
 #include "platform/Callback.h"
 #include "platform/mbed_error.h"
-#include "rtos/ConditionVariable.h"
 #include "rtos/Mutex.h"
+#include "rtos/ThisThread.h"
+#include "features/netsocket/SocketAddress.h"
 
 // Various timeouts for different ESP8266 operations
 #ifndef ESP8266_CONNECT_TIMEOUT
@@ -42,6 +44,9 @@
 #endif
 #ifndef ESP8266_MISC_TIMEOUT
 #define ESP8266_MISC_TIMEOUT    2000
+#endif
+#ifndef ESP8266_DNS_TIMEOUT
+#define ESP8266_DNS_TIMEOUT     15000
 #endif
 
 #define ESP8266_SCAN_TIME_MIN 0     // [ms]
@@ -60,6 +65,15 @@
 
 #define FW_AT_LEAST_VERSION(MAJOR,MINOR,PATCH,NUSED/*Not used*/,REF) \
     (((MAJOR)*1000000+(MINOR)*10000+(PATCH)*100) >= REF ? true : false)
+
+struct esp8266_socket {
+    int id;
+    nsapi_protocol_t proto;
+    bool connected;
+    bool bound;
+    SocketAddress addr;
+    int keepalive; // TCP
+};
 
 /** ESP8266Interface class.
     This is an interface to a ESP8266 radio.
@@ -165,6 +179,14 @@ public:
     bool disconnect(void);
 
     /**
+    * Enable or disable Remote IP and Port printing with +IPD
+    *
+    * @param enable, 1 on, 0 off
+    * @return true only if ESP8266 is disconnected successfully
+    */
+    bool ip_info_print(int enable);
+
+    /**
     * Get the IP address of ESP8266
     *
     * @return null-teriminated IP address or null if no IP address is assigned
@@ -233,9 +255,10 @@ public:
     * @param addr the IP address of the destination
     * @param port the port on the destination
     * @param local_port UDP socket's local port, zero means any
+    * @param udp_mode UDP socket's mode, zero means can't change remote, 1 can change once, 2 can change multiple times
     * @return NSAPI_ERROR_OK in success, negative error code in failure
     */
-    nsapi_error_t open_udp(int id, const char *addr, int port, int local_port = 0);
+    nsapi_error_t open_udp(int id, const char *addr, int port, int local_port = 0, int udp_mode = 0);
 
     /**
     * Open a socketed connection
@@ -255,10 +278,10 @@ public:
     *
     * @param id id of socket to send to
     * @param data data to be sent
-    * @param amount amount of data to be sent - max 1024
-    * @return NSAPI_ERROR_OK in success, negative error code in failure
+    * @param amount amount of data to be sent - max 2048
+    * @return number of bytes on success, negative error code in failure
     */
-    nsapi_error_t send(int id, const void *data, uint32_t amount);
+    nsapi_size_or_error_t send(int id, const void *data, uint32_t amount);
 
     /**
     * Receives datagram from an open UDP socket
@@ -268,7 +291,7 @@ public:
     * @param amount number of bytes to be received
     * @return the number of bytes received
     */
-    int32_t recv_udp(int id, void *data, uint32_t amount, uint32_t timeout = ESP8266_RECV_TIMEOUT);
+    int32_t recv_udp(struct esp8266_socket *socket, void *data, uint32_t amount, uint32_t timeout = ESP8266_RECV_TIMEOUT);
 
     /**
     * Receives stream data from an open TCP socket
@@ -405,6 +428,14 @@ public:
     static const int8_t WIFIMODE_STATION_SOFTAP = 3;
     static const int8_t SOCKET_COUNT = 5;
 
+    /**
+     * Enables or disables uart input and deep sleep
+     *
+     * @param lock if TRUE, uart input is enabled and  deep sleep is locked
+     * if FALSE, uart input is disabled and  deep sleep is unlocked
+     */
+    int uart_enable_input(bool lock);
+
 private:
     // FW version
     struct fw_sdk_version _sdk_v;
@@ -416,11 +447,10 @@ private:
     mbed::Callback<void()> _callback;
 
     // UART settings
-    mbed::UARTSerial _serial;
+    mbed::BufferedSerial _serial;
     PinName _serial_rts;
     PinName _serial_cts;
     rtos::Mutex _smutex; // Protect serial port access
-    rtos::Mutex _rmutex; // Reset protection
 
     // AT Command Parser
     mbed::ATCmdParser _parser;
@@ -432,11 +462,14 @@ private:
     struct packet {
         struct packet *next;
         int id;
+        char remote_ip[16];
+        int remote_port;
         uint32_t len; // Remaining length
         uint32_t alloc_len; // Original length
         // data follows
     } *_packets, * *_packets_end;
     void _clear_socket_packets(int id);
+    void _clear_socket_sending(int id);
     int _sock_active_id;
 
     // Memory statistics
@@ -462,6 +495,8 @@ private:
     void _oob_tcp_data_hdlr();
     void _oob_ready();
     void _oob_scan_results();
+    void _oob_send_ok_received();
+    void _oob_send_fail_received();
 
     // OOB state variables
     int _connect_error;
@@ -471,8 +506,8 @@ private:
     bool _closed;
     bool _error;
     bool _busy;
-    rtos::ConditionVariable _reset_check;
     bool _reset_done;
+    int _sock_sending_id;
 
     // Modem's address info
     char _ip_buffer[16];
@@ -487,6 +522,7 @@ private:
         char *tcp_data;
         int32_t tcp_data_avbl; // Data waiting on modem
         int32_t tcp_data_rcvd;
+        bool send_fail;     // Received 'SEND FAIL'. Expect user will close the socket.
     };
     struct _sock_info _sock_i[SOCKET_COUNT];
 

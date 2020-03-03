@@ -21,28 +21,22 @@
 #include "CellularLog.h"
 
 // defines as per ELS61-E2_ATC_V01.000 and BGS2-W_ATC_V00.100
-#define SOCKET_MAX 10
 #define UDP_PACKET_SIZE 1460
 #define FAILURE_TIMEOUT (30*1000) // failure timeout in milliseconds on modem side
-
-/*
- * Use connection profile 0 and Internet service profiles starting from 0 for sockets.
- */
-#define CONNECTION_PROFILE_ID 0
 
 using namespace mbed;
 
 GEMALTO_CINTERION_CellularStack::GEMALTO_CINTERION_CellularStack(ATHandler &atHandler, const char *apn, const char *user, const char *password,
-                                                                 int cid, nsapi_ip_stack_t stack_type) : AT_CellularStack(atHandler, cid, stack_type), _apn(apn),
-    _user(user), _password(password)
+                                                                 int cid, nsapi_ip_stack_t stack_type, AT_CellularDevice &device) :
+    AT_CellularStack(atHandler, cid, stack_type, device), _apn(apn), _user(user), _password(password)
 {
 }
 
 GEMALTO_CINTERION_CellularStack::~GEMALTO_CINTERION_CellularStack()
 {
-    _at.set_urc_handler("^SIS:", 0);
-    _at.set_urc_handler("^SISW:", 0);
-    _at.set_urc_handler("^SISR:", 0);
+    _at.set_urc_handler("^SIS:", nullptr);
+    _at.set_urc_handler("^SISW:", nullptr);
+    _at.set_urc_handler("^SISR:", nullptr);
 }
 
 void GEMALTO_CINTERION_CellularStack::urc_sis()
@@ -58,6 +52,17 @@ void GEMALTO_CINTERION_CellularStack::urc_sis()
                 sock->started = true;
                 sock->tx_ready = true;
                 sock->_cb(sock->_data);
+            }
+        }
+        if (urc_code == 0) {
+            int urc_info_id = _at.read_int();
+            if (urc_info_id == 48) {
+                tr_info("Socket closed %d", sock_id);
+                sock->closed = true;
+                if (sock->_cb) {
+                    sock->_cb(sock->_data);
+                }
+
             }
         }
     }
@@ -99,7 +104,7 @@ void GEMALTO_CINTERION_CellularStack::sisr_urc_handler(int sock_id, int urc_code
     if (sock) {
         if (urc_code == 1) { // data available
             if (sock->_cb) {
-                sock->rx_avail = true;
+                sock->pending_bytes = 1;
                 sock->_cb(sock->_data);
             }
         }
@@ -109,33 +114,22 @@ void GEMALTO_CINTERION_CellularStack::sisr_urc_handler(int sock_id, int urc_code
 nsapi_error_t GEMALTO_CINTERION_CellularStack::socket_stack_init()
 {
     _at.lock();
-    int connection_profile_id = CONNECTION_PROFILE_ID;
-    nsapi_error_t err = create_connection_profile(connection_profile_id);
+    nsapi_error_t err = create_connection_profile(_cid);
     if (!err) {
         _at.set_urc_handler("^SIS:", mbed::Callback<void()>(this, &GEMALTO_CINTERION_CellularStack::urc_sis));
         _at.set_urc_handler("^SISW:", mbed::Callback<void()>(this, &GEMALTO_CINTERION_CellularStack::urc_sisw));
         _at.set_urc_handler("^SISR:", mbed::Callback<void()>(this, &GEMALTO_CINTERION_CellularStack::urc_sisr));
     } else { // recovery cleanup
         // close all Internet and connection profiles
-        for (int i = 0; i < SOCKET_MAX; i++) {
+        for (int i = 0; i < _device.get_property(AT_CellularDevice::PROPERTY_SOCKET_COUNT); i++) {
             _at.clear_error();
             socket_close_impl(i);
         }
         _at.clear_error();
-        close_connection_profile(connection_profile_id);
+        close_connection_profile(_cid);
     }
     _at.unlock();
     return err;
-}
-
-int GEMALTO_CINTERION_CellularStack::get_max_socket_count()
-{
-    return SOCKET_MAX;
-}
-
-bool GEMALTO_CINTERION_CellularStack::is_protocol_supported(nsapi_protocol_t protocol)
-{
-    return (protocol == NSAPI_UDP || protocol == NSAPI_TCP);
 }
 
 nsapi_error_t GEMALTO_CINTERION_CellularStack::socket_close_impl(int sock_id)
@@ -144,16 +138,11 @@ nsapi_error_t GEMALTO_CINTERION_CellularStack::socket_close_impl(int sock_id)
 
     _at.set_at_timeout(FAILURE_TIMEOUT);
 
-    _at.cmd_start("AT^SISC=");
-    _at.write_int(sock_id);
-    _at.cmd_stop_read_resp();
+    _at.at_cmd_discard("^SISC", "=", "%d", sock_id);
 
     _at.clear_error(); // clear SISS even though SISC fails
-    _at.cmd_start("AT^SISS=");
-    _at.write_int(sock_id);
-    _at.write_string("srvType");
-    _at.write_string("none");
-    _at.cmd_stop_read_resp();
+
+    _at.at_cmd_discard("^SISS", "=", "%d%s%s", sock_id, "srvType", "none");
 
     _at.restore_at_timeout();
 
@@ -162,16 +151,13 @@ nsapi_error_t GEMALTO_CINTERION_CellularStack::socket_close_impl(int sock_id)
 
 nsapi_error_t GEMALTO_CINTERION_CellularStack::socket_open_defer(CellularSocket *socket, const SocketAddress *address)
 {
-    int connection_profile_id = CONNECTION_PROFILE_ID;
-
     int retry_open = 1;
 retry_open:
     // setup internet session profile
     int internet_service_id = find_socket_index(socket);
     bool foundSrvType = false;
     bool foundConIdType = false;
-    _at.cmd_start("AT^SISS?");
-    _at.cmd_stop();
+    _at.cmd_start_stop("^SISS", "?");
     _at.resp_start("^SISS:");
     /*
      * Profile is a list of tag-value map:
@@ -199,7 +185,7 @@ retry_open:
                     }
                     if (strcmp(paramTag, "conId") == 0) {
                         char buf[10];
-                        std::sprintf(buf, "%d", connection_profile_id);
+                        std::sprintf(buf, "%d", _cid);
                         if (strcmp(paramValue, buf) == 0) {
                             foundConIdType = true;
                         }
@@ -211,19 +197,11 @@ retry_open:
     _at.resp_stop();
 
     if (!foundSrvType) {
-        _at.cmd_start("AT^SISS=");
-        _at.write_int(internet_service_id);
-        _at.write_string("srvType");
-        _at.write_string("Socket");
-        _at.cmd_stop_read_resp();
+        _at.at_cmd_discard("^SISS", "=", "%d%s%s", internet_service_id, "srvType", "Socket");
     }
 
     if (!foundConIdType) {
-        _at.cmd_start("AT^SISS=");
-        _at.write_int(internet_service_id);
-        _at.write_string("conId");
-        _at.write_int(connection_profile_id);
-        _at.cmd_stop_read_resp();
+        _at.at_cmd_discard("^SISS", "=", "%d%s%d", internet_service_id, "conId", _cid);
     }
 
     // host address (IPv4) and local+remote port is needed only for BGS2 which does not support UDP server socket
@@ -249,12 +227,10 @@ retry_open:
     _at.write_string(sock_addr);
     _at.cmd_stop_read_resp();
 
-    _at.cmd_start("AT^SISO=");
-    _at.write_int(internet_service_id);
-    _at.cmd_stop_read_resp();
+    _at.at_cmd_discard("^SISO", "=", "%d", internet_service_id);
 
     if (_at.get_last_error()) {
-        tr_error("Socket %d open failed!", socket->id);
+        tr_error("Socket %d open failed!", internet_service_id);
         _at.clear_error();
         socket_close_impl(internet_service_id); // socket may already be open on modem if app and modem are not in sync, as a recovery, try to close the socket so open succeeds the next time
         if (retry_open--) {
@@ -337,13 +313,8 @@ nsapi_size_or_error_t GEMALTO_CINTERION_CellularStack::socket_sendto_impl(Cellul
     }
 
     _at.set_at_timeout(FAILURE_TIMEOUT);
-    _at.cmd_start("AT^SISW=");
-    _at.write_int(socket->id);
-    _at.write_int(size);
 
     if (GEMALTO_CINTERION::get_module() != GEMALTO_CINTERION::ModuleBGS2) {
-        _at.write_int(0);
-
         // UDP requires Udp_RemClient
         if (socket->proto == NSAPI_UDP) {
             char socket_address[NSAPI_IPv6_SIZE + sizeof("[]:12345") - 1 + 1];
@@ -352,11 +323,13 @@ nsapi_size_or_error_t GEMALTO_CINTERION_CellularStack::socket_sendto_impl(Cellul
             } else {
                 std::sprintf(socket_address, "[%s]:%u", address.get_ip_address(), address.get_port());
             }
-            _at.write_string(socket_address);
+            _at.cmd_start_stop("^SISW", "=", "%d%d%d%s", socket->id, size, 0, socket_address);
+        } else {
+            _at.cmd_start_stop("^SISW", "=", "%d%d%d", socket->id, size, 0);
         }
+    } else {
+        _at.cmd_start_stop("^SISW", "=", "%d%d", socket->id, size);
     }
-
-    _at.cmd_stop();
 
 sisw_retry:
     _at.resp_start("^SISW:");
@@ -406,10 +379,10 @@ nsapi_size_or_error_t GEMALTO_CINTERION_CellularStack::socket_recvfrom_impl(Cell
 
     // we must use this flag, otherwise ^SISR URC can come while we are reading response and there is
     // no way to detect if that is really an URC or response
-    if (!socket->rx_avail) {
+    if (!socket->pending_bytes) {
         _at.process_oob(); // check for ^SISR URC
-        if (!socket->rx_avail) {
-            tr_debug("Socekt %d recv would block", socket->id);
+        if (!socket->pending_bytes) {
+            tr_debug("Socket %d recv would block", socket->id);
             return NSAPI_ERROR_WOULD_BLOCK;
         }
     }
@@ -418,10 +391,7 @@ nsapi_size_or_error_t GEMALTO_CINTERION_CellularStack::socket_recvfrom_impl(Cell
         size = UDP_PACKET_SIZE;
     }
 
-    _at.cmd_start("AT^SISR=");
-    _at.write_int(socket->id);
-    _at.write_int(size);
-    _at.cmd_stop();
+    _at.cmd_start_stop("^SISR", "=", "%d%d", socket->id, size);
 
 sisr_retry:
     _at.resp_start("^SISR:");
@@ -452,12 +422,12 @@ sisr_retry:
         tr_error("Socket %d recvfrom failed!", socket->id);
         return NSAPI_ERROR_DEVICE_ERROR;
     }
-    socket->rx_avail = false;
+    socket->pending_bytes = 0;
     if (len >= (nsapi_size_or_error_t)size) {
         len = (nsapi_size_or_error_t)size;
         int remain_len = _at.read_int();
         if (remain_len > 0) {
-            socket->rx_avail = true;
+            socket->pending_bytes = 1;
         }
     }
 
@@ -516,8 +486,8 @@ nsapi_error_t GEMALTO_CINTERION_CellularStack::create_connection_profile(int con
 
     char conParamType[sizeof("GPRS0") + 1];
     std::sprintf(conParamType, "GPRS%d", (_stack_type == IPV4_STACK) ? 0 : 6);
-    _at.cmd_start("AT^SICS?");
-    _at.cmd_stop();
+
+    _at.cmd_start_stop("^SICS", "?");
     bool found_connection = false;
     _at.resp_start("^SICS:");
     while (_at.info_resp()) {
@@ -543,46 +513,25 @@ nsapi_error_t GEMALTO_CINTERION_CellularStack::create_connection_profile(int con
 
     // connection profile is bound to a PDP context and it can not be changed
     if (!found_connection) {
-        _at.cmd_start("AT^SICS=");
-        _at.write_int(connection_profile_id);
-        _at.write_string("conType");
-        _at.write_string(conParamType);
-        _at.cmd_stop_read_resp();
+        _at.at_cmd_discard("^SICS", "=", "%d%s%s", connection_profile_id, "conType", conParamType);
 
         if (_apn && strlen(_apn) > 0) {
-            _at.cmd_start("AT^SICS=");
-            _at.write_int(connection_profile_id);
-            _at.write_string("apn");
-            _at.write_string(_apn);
-            _at.cmd_stop_read_resp();
+            _at.at_cmd_discard("^SICS", "=", "%d%s%s", connection_profile_id, "apn", _apn);
         }
 
         if (_user && strlen(_user) > 0) {
-            _at.cmd_start("AT^SICS=");
-            _at.write_int(connection_profile_id);
-            _at.write_string("user");
-            _at.write_string(_user);
-            _at.cmd_stop_read_resp();
+            _at.at_cmd_discard("^SICS", "=", "%d%s%s", connection_profile_id, "user", _user);
         }
 
         if (_password && strlen(_password) > 0) {
-            _at.cmd_start("AT^SICS=");
-            _at.write_int(connection_profile_id);
-            _at.write_string("passwd");
-            _at.write_string(_password);
-            _at.cmd_stop_read_resp();
+            _at.at_cmd_discard("^SICS", "=", "%d%s%s", connection_profile_id, "passwd", _password);
         }
 
         // set maximum inactivity timeout
-        _at.cmd_start("AT^SICS=");
-        _at.write_int(connection_profile_id);
-        _at.write_string("inactTO");
-        _at.write_int(0xffff); // 2^16-1
-        _at.cmd_stop_read_resp();
+        _at.at_cmd_discard("^SICS", "=", "%d%s%d", connection_profile_id, "inactTO", 0xffff);
 
         // use URC mode ON
-        _at.cmd_start("AT^SCFG=\"Tcp/withURCs\",\"on\"");
-        _at.cmd_stop_read_resp();
+        _at.at_cmd_discard("^SCFG", "=", "%s%s", "Tcp/withURCs", "on");
     }
 
     tr_debug("Cinterion profile %d, %s (err %d)", connection_profile_id, (_stack_type == IPV4_STACK) ? "IPv4" : "IPv6", _at.get_last_error());
@@ -598,15 +547,10 @@ void GEMALTO_CINTERION_CellularStack::close_connection_profile(int connection_pr
     // To clear connection profile need to detach from packet data.
     // After detach modem sends PDP disconnected event to network class,
     // which propagates network disconnected to upper layer to start reconnecting.
-    _at.cmd_start("AT+CGATT=0");
-    _at.cmd_stop_read_resp();
+    _at.at_cmd_discard("+CGATT", "=0");
     _at.clear_error();
 
-    _at.cmd_start("AT^SICS=");
-    _at.write_int(connection_profile_id);
-    _at.write_string("conType");
-    _at.write_string("none");
-    _at.cmd_stop_read_resp();
+    _at.at_cmd_discard("^SICS", "=", "%d%s%s", connection_profile_id, "conType", "none");
 
     _at.clear_error();
 }

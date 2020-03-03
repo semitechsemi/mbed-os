@@ -13,64 +13,38 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "SystemStorage.h"
-#include "BlockDevice.h"
-#include "FileSystem.h"
-#include "FATFileSystem.h"
-#include "LittleFileSystem.h"
+#include "features/storage/blockdevice/BlockDevice.h"
+#include "features/storage/filesystem/FileSystem.h"
+#include "features/storage/filesystem/fat/FATFileSystem.h"
+#include "features/storage/filesystem/littlefs/LittleFileSystem.h"
 #include "mbed_error.h"
 
 
 #if COMPONENT_SPIF
-#include "SPIFBlockDevice.h"
-#endif
-
-#if COMPONENT_RSPIF
-#include "SPIFReducedBlockDevice.h"
+#include "components/storage/blockdevice/COMPONENT_SPIF/SPIFBlockDevice.h"
 #endif
 
 #if COMPONENT_QSPIF
-#include "QSPIFBlockDevice.h"
+#include "components/storage/blockdevice/COMPONENT_QSPIF/QSPIFBlockDevice.h"
 #endif
 
 #if COMPONENT_DATAFLASH
-#include "DataFlashBlockDevice.h"
+#include "components/storage/blockdevice/COMPONENT_DATAFLASH/DataFlashBlockDevice.h"
 #endif
 
 #if COMPONENT_SD
-#include "SDBlockDevice.h"
+#include "components/storage/blockdevice/COMPONENT_SD/SDBlockDevice.h"
+
+#if (STATIC_PINMAP_READY)
+const spi_pinmap_t static_spi_pinmap = get_spi_pinmap(MBED_CONF_SD_SPI_MOSI, MBED_CONF_SD_SPI_MISO, MBED_CONF_SD_SPI_CLK, NC);
+#endif
 #endif
 
 #if COMPONENT_FLASHIAP
-#include "FlashIAPBlockDevice.h"
+#include "components/storage/blockdevice/COMPONENT_FLASHIAP/FlashIAPBlockDevice.h"
 #endif
 
 using namespace mbed;
-
-
-
-MBED_WEAK int avoid_conflict_nvstore_tdbstore(owner_type_e in_mem_owner)
-{
-    int status = MBED_SUCCESS;
-    static PlatformMutex _mutex;
-    static owner_type_e internal_memory_owner = NONE;
-
-    _mutex.lock();
-
-    if (internal_memory_owner != NONE &&
-            internal_memory_owner != in_mem_owner) {
-
-        status = MBED_ERROR_ALREADY_INITIALIZED;
-
-    } else {
-
-        internal_memory_owner = in_mem_owner;
-    }
-
-    _mutex.unlock();
-
-    return status;
-}
 
 // Align a value to a specified size.
 // Parameters :
@@ -86,62 +60,32 @@ MBED_WEAK BlockDevice *BlockDevice::get_default_instance()
 {
 #if COMPONENT_SPIF
 
-    static SPIFBlockDevice default_bd(
-        MBED_CONF_SPIF_DRIVER_SPI_MOSI,
-        MBED_CONF_SPIF_DRIVER_SPI_MISO,
-        MBED_CONF_SPIF_DRIVER_SPI_CLK,
-        MBED_CONF_SPIF_DRIVER_SPI_CS,
-        MBED_CONF_SPIF_DRIVER_SPI_FREQ
-    );
-
-    return &default_bd;
-
-#elif COMPONENT_RSPIF
-
-    static SPIFReducedBlockDevice default_bd(
-        MBED_CONF_RSPIF_DRIVER_SPI_MOSI,
-        MBED_CONF_RSPIF_DRIVER_SPI_MISO,
-        MBED_CONF_RSPIF_DRIVER_SPI_CLK,
-        MBED_CONF_RSPIF_DRIVER_SPI_CS,
-        MBED_CONF_RSPIF_DRIVER_SPI_FREQ
-    );
+    static SPIFBlockDevice default_bd;
 
     return &default_bd;
 
 #elif COMPONENT_QSPIF
 
-    static QSPIFBlockDevice default_bd(
-        MBED_CONF_QSPIF_QSPI_IO0,
-        MBED_CONF_QSPIF_QSPI_IO1,
-        MBED_CONF_QSPIF_QSPI_IO2,
-        MBED_CONF_QSPIF_QSPI_IO3,
-        MBED_CONF_QSPIF_QSPI_SCK,
-        MBED_CONF_QSPIF_QSPI_CSN,
-        MBED_CONF_QSPIF_QSPI_POLARITY_MODE,
-        MBED_CONF_QSPIF_QSPI_FREQ
-    );
+    static QSPIFBlockDevice default_bd;
 
     return &default_bd;
 
 #elif COMPONENT_DATAFLASH
 
-    static DataFlashBlockDevice default_bd(
-        MBED_CONF_DATAFLASH_SPI_MOSI,
-        MBED_CONF_DATAFLASH_SPI_MISO,
-        MBED_CONF_DATAFLASH_SPI_CLK,
-        MBED_CONF_DATAFLASH_SPI_CS
-    );
+    static DataFlashBlockDevice default_bd;
 
     return &default_bd;
 
 #elif COMPONENT_SD
 
+#if (STATIC_PINMAP_READY)
     static SDBlockDevice default_bd(
-        MBED_CONF_SD_SPI_MOSI,
-        MBED_CONF_SD_SPI_MISO,
-        MBED_CONF_SD_SPI_CLK,
+        static_spi_pinmap,
         MBED_CONF_SD_SPI_CS
     );
+#else
+    static SDBlockDevice default_bd;
+#endif
 
     return &default_bd;
 

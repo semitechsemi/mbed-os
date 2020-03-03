@@ -209,8 +209,8 @@ static rf_mode_e rf_mode = RF_MODE_NORMAL;
 static bool rf_update_config = false;
 static uint16_t cur_packet_len = 0xffff;
 static uint32_t receiver_ready_timestamp;
-
 static int16_t rssi_threshold = RSSI_THRESHOLD;
+static uint32_t tx_start_time = 0;
 
 /* Channel configurations for sub-GHz */
 static phy_rf_channel_configuration_s phy_subghz = {
@@ -274,6 +274,20 @@ static void rf_calculate_symbol_rate(uint32_t baudrate, phy_modulation_e modulat
 static uint32_t rf_get_timestamp(void)
 {
     return (uint32_t)rf->tx_timer.read_us();
+}
+
+static void rf_update_tx_active_time(void)
+{
+    if (device_driver.phy_rf_statistics) {
+        device_driver.phy_rf_statistics->tx_active_time += rf_get_timestamp() - tx_start_time;
+    }
+}
+
+static void rf_update_rx_active_time(void)
+{
+    if (device_driver.phy_rf_statistics) {
+        device_driver.phy_rf_statistics->rx_active_time += rf_get_timestamp() - rx_time;
+    }
 }
 
 static void rf_lock(void)
@@ -543,6 +557,19 @@ static void rf_set_channel_configuration_registers(void)
         rf_channel_multiplier++;
     }
     rf_write_register(CHSPACE, ch_space);
+    /* Preamble is set for S2-LP as repetitions of 01 or 10 pair
+     *
+     * For datarate < 150kbps, using phyFskPreambleLength = 8 repetitions of 01010101
+     * For datarate >= 150kbps and datarate < 300kbps, using phyFskPreambleLength = 12 repetitions of 01010101
+     * For datarate >= 300kbps, using phyFskPreambleLength = 24 repetitions of 01010101
+     */
+    uint8_t preamble_len = 24 * 4;
+    if (phy_subghz.datarate < 150000) {
+        preamble_len = 8 * 4;
+    } else if (phy_subghz.datarate < 300000) {
+        preamble_len = 12 * 4;
+    }
+    rf_write_register(PCKTCTRL5, preamble_len);
 }
 
 static void rf_init_registers(void)
@@ -550,13 +577,13 @@ static void rf_init_registers(void)
     rf_write_register_field(PCKTCTRL3, PCKT_FORMAT_FIELD, PCKT_FORMAT_802_15_4);
     rf_write_register_field(MOD2, MOD_TYPE_FIELD, MOD_2FSK);
     rf_write_register(PCKT_FLT_OPTIONS, 0);
-    rf_write_register_field(PCKTCTRL1, PCKT_CRCMODE_FIELD, PCKT_CRCMODE_0X1021);
+    rf_write_register_field(PCKTCTRL1, PCKT_CRCMODE_FIELD, PCKT_CRCMODE_0x04C11DB7);
     rf_write_register_field(PCKTCTRL1, PCKT_TXSOURCE_FIELD, PCKT_TXSOURCE_NORMAL);
     rf_write_register_field(PCKTCTRL1, PCKT_WHITENING_FIELD, PCKT_WHITENING_ENABLED);
     rf_write_register_field(PCKTCTRL2, PCKT_FIXVARLEN_FIELD, PCKT_VARIABLE_LEN);
+    rf_write_register_field(PCKTCTRL2, PCKT_FCS_TYPE_FIELD, PCKT_FCS_TYPE_4_OCTET);
     rf_write_register_field(PCKTCTRL3, PCKT_RXMODE_FIELD, PCKT_RXMODE_NORMAL);
     rf_write_register_field(PCKTCTRL3, PCKT_BYTE_SWAP_FIELD, PCKT_BYTE_SWAP_LSB);
-    rf_write_register(PCKTCTRL5, PCKT_PREAMBLE_LEN);
     rf_write_register_field(PCKTCTRL6, PCKT_SYNCLEN_FIELD, PCKT_SYNCLEN);
     rf_write_register_field(QI, PQI_TH_FIELD, PQI_TH);
     rf_write_register_field(QI, SQI_EN_FIELD, SQI_EN);
@@ -726,6 +753,7 @@ static void rf_tx_sent_handler(void)
     rf_disable_interrupt(TX_DATA_SENT);
     if (rf_state != RF_TX_ACK) {
         tx_finnish_time = rf_get_timestamp();
+        rf_update_tx_active_time();
         TEST_TX_DONE
         rf_state = RF_IDLE;
         rf_receive(rf_rx_channel);
@@ -758,6 +786,7 @@ static void rf_start_tx(void)
     rf_disable_all_interrupts();
     rf_poll_state_change(S2LP_STATE_READY);
     rf_state_change(S2LP_STATE_TX, false);
+    tx_start_time = rf_get_timestamp();
     // More TX data to be written in FIFO when TX threshold interrupt occurs
     if (tx_data_ptr) {
         rf_enable_interrupt(TX_FIFO_ALMOST_EMPTY);
@@ -792,6 +821,7 @@ static void rf_cca_timer_interrupt(void)
         }
         rf_flush_tx_fifo();
         tx_finnish_time = rf_get_timestamp();
+        rf_update_tx_active_time();
         if (device_driver.phy_tx_done_cb) {
             device_driver.phy_tx_done_cb(rf_radio_driver_id, mac_tx_handle, PHY_LINK_CCA_FAIL, 0, 0);
         }
@@ -812,6 +842,9 @@ static void rf_cca_timer_interrupt(void)
             rf_start_tx();
             rf_state = RF_TX_STARTED;
             TEST_TX_STARTED
+            if (device_driver.phy_rf_statistics) {
+                device_driver.phy_rf_statistics->tx_bytes += tx_data_length;
+            }
         }
     }
 }
@@ -830,10 +863,12 @@ static void rf_backup_timer_interrupt(void)
 {
     tx_finnish_time = rf_get_timestamp();
     if (rf_state == RF_RX_STARTED) {
+        rf_update_rx_active_time();
         if (device_driver.phy_rf_statistics) {
             device_driver.phy_rf_statistics->rx_timeouts++;
         }
     } else {
+        rf_update_tx_active_time();
         if (device_driver.phy_rf_statistics) {
             device_driver.phy_rf_statistics->tx_timeouts++;
         }
@@ -908,6 +943,9 @@ static void rf_send_ack(uint8_t seq)
     rf_start_tx();
     TEST_ACK_TX_STARTED
     rf_backup_timer_start(ACK_SENDING_TIME);
+    if (device_driver.phy_rf_statistics) {
+        device_driver.phy_rf_statistics->tx_bytes += sizeof(ack_frame);
+    }
 }
 
 static void rf_handle_ack(uint8_t seq_number, uint8_t pending)
@@ -915,6 +953,7 @@ static void rf_handle_ack(uint8_t seq_number, uint8_t pending)
     phy_link_tx_status_e phy_status;
     if (tx_sequence == (uint16_t)seq_number) {
         tx_finnish_time = rf_get_timestamp();
+        rf_update_tx_active_time();
         if (pending) {
             phy_status = PHY_LINK_TX_DONE_PENDING;
         } else {
@@ -952,6 +991,9 @@ static void rf_rx_ready_handler(void)
             if ((version != MAC_FRAME_VERSION_2) && (rx_buffer[0] & FC_AR)) {
                 rf_send_ack(rx_buffer[2]);
             }
+        }
+        if (device_driver.phy_rf_statistics) {
+            device_driver.phy_rf_statistics->rx_bytes += rx_data_length;
         }
     } else {
         rf_state = RF_IDLE;
@@ -999,6 +1041,7 @@ static void rf_receive(uint8_t rx_channel)
     rf_poll_state_change(S2LP_STATE_READY);
     rf_flush_rx_fifo();
     if (rf_update_config == true) {
+        rf_channel_multiplier = 1;
         rf_update_config = false;
         rf_set_channel_configuration_registers();
     }
@@ -1058,6 +1101,7 @@ static void rf_irq_task_process_irq(void)
     if ((irq_status & (1 << TX_FIFO_UNF_OVF)) && (enabled_interrupts & (1 << TX_FIFO_UNF_OVF))) {
         rf_backup_timer_stop();
         tx_finnish_time = rf_get_timestamp();
+        rf_update_tx_active_time();
         TEST_TX_DONE
         device_driver.phy_tx_done_cb(rf_radio_driver_id, mac_tx_handle, PHY_LINK_CCA_FAIL, 1, 0);
         rf_send_command(S2LP_CMD_SABORT);
@@ -1073,6 +1117,7 @@ static void rf_irq_task_process_irq(void)
         }
     } else if (rf_state == RF_RX_STARTED) {
         if ((irq_status & (1 << RX_DATA_READY)) && (enabled_interrupts & (1 << RX_DATA_READY))) {
+            rf_update_rx_active_time();
             if (!(irq_status & (1 << CRC_ERROR))) {
                 rf_rx_ready_handler();
             } else {
@@ -1098,6 +1143,7 @@ static void rf_irq_task_process_irq(void)
         }
     }
     if ((irq_status & (1 << RX_FIFO_UNF_OVF)) && (enabled_interrupts & (1 << RX_FIFO_UNF_OVF))) {
+        rf_update_rx_active_time();
         TEST_RX_DONE
         rf_backup_timer_stop();
         rf_send_command(S2LP_CMD_SABORT);

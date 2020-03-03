@@ -18,6 +18,7 @@
 #include "UBLOX_AT_CellularStack.h"
 #include "APN_db.h"
 #include "CellularLog.h"
+#include "rtos/ThisThread.h"
 
 namespace mbed {
 
@@ -39,7 +40,7 @@ NetworkStack *UBLOX_AT_CellularContext::get_stack()
         return NULL;
     }
     if (!_stack) {
-        _stack = new UBLOX_AT_CellularStack(_at, _cid, (nsapi_ip_stack_t)_pdp_type);
+        _stack = new UBLOX_AT_CellularStack(_at, _cid, (nsapi_ip_stack_t)_pdp_type, *get_device());
     }
 
     return _stack;
@@ -51,24 +52,27 @@ void UBLOX_AT_CellularContext::do_connect()
     _cb_data.error = NSAPI_ERROR_NO_CONNECTION;
 
     // Attempt to establish a connection
-#ifndef TARGET_UBLOX_C030_R41XM
+#ifndef UBX_MDM_SARA_R41XM
     _cb_data.error = define_context();
-#elif TARGET_UBLOX_C030_R410M
+#elif UBX_MDM_SARA_R410M
+    _at.cmd_start_stop("+CGACT", "?");
+    _at.resp_start("+CGACT:");
+    _cid = _at.read_int();
+    _at.skip_param(1);
+    _at.resp_stop();
+
+    _is_connected = true;
     _is_context_active = true;
     _is_context_activated = true;
     _cb_data.error = NSAPI_ERROR_OK;
-#elif TARGET_UBLOX_C030_R412M
+#elif UBX_MDM_SARA_R412M
     CellularNetwork::RadioAccessTechnology rat = read_radio_technology();
     if (rat == CellularNetwork::RadioAccessTechnology::RAT_EGPRS) {
         if (!_is_context_active) {
             _at.set_at_timeout(150 * 1000);
-            _at.cmd_start("AT+CGACT=1,1");
-            _at.cmd_stop();
-            _at.resp_start();
-            _at.resp_stop();
+            _at.at_cmd_discard("+CGACT", "=", "%d%d", 1, 1);
 
-            _at.cmd_start("AT+CGACT?");
-            _at.cmd_stop();
+            _at.cmd_start_stop("+CGACT", "?");
             _at.resp_start("+CGACT:");
             _at.skip_param(1);
             _is_context_activated = _at.read_int();
@@ -76,11 +80,19 @@ void UBLOX_AT_CellularContext::do_connect()
             _at.restore_at_timeout();
             if (_is_context_activated == true) {
                 _cid = 1;
+                _is_connected = true;
                 _is_context_active = true;
                 _cb_data.error = NSAPI_ERROR_OK;
             }
         }
     } else if (rat == CellularNetwork::RadioAccessTechnology::RAT_CATM1 || rat == CellularNetwork::RadioAccessTechnology::RAT_NB1) {
+        _at.cmd_start_stop("+CGACT", "?");
+        _at.resp_start("+CGACT:");
+        _cid = _at.read_int();
+        _at.skip_param(1);
+        _at.resp_stop();
+
+        _is_connected = true;
         _is_context_active = true;
         _is_context_activated = true;
         _cb_data.error = NSAPI_ERROR_OK;
@@ -102,7 +114,7 @@ void UBLOX_AT_CellularContext::do_connect()
     }
 }
 
-#ifndef TARGET_UBLOX_C030_R41XM
+#ifndef UBX_MDM_SARA_R41XM
 nsapi_error_t UBLOX_AT_CellularContext::define_context()
 {
     bool success = false;
@@ -117,12 +129,13 @@ nsapi_error_t UBLOX_AT_CellularContext::define_context()
         return err;
     }
 
-    _at.cmd_start("AT+UPSND=" PROFILE ",8");
-    _at.cmd_stop();
+    _at.lock();
+    _at.cmd_start_stop("+UPSND", "=", "%d%d", PROFILE, 8);
     _at.resp_start("+UPSND:");
     _at.skip_param(2);
     active = _at.read_int();
     _at.resp_stop();
+    _at.unlock();
 
     if (active == 0) {
         // If the caller hasn't entered an APN, try to find it
@@ -164,79 +177,52 @@ bool UBLOX_AT_CellularContext::activate_profile(const char *apn,
     // Set up the APN
     if (apn) {
         success = false;
-        _at.cmd_start("AT+UPSD=" PROFILE ",1,");
-        _at.write_string(apn);
-        _at.cmd_stop();
-        _at.resp_start();
-        _at.resp_stop();
-
-        if (_at.get_last_error() == NSAPI_ERROR_OK) {
+        if (_at.at_cmd_discard("+UPSD", "=", "%d%d%s", PROFILE, 1, apn) == NSAPI_ERROR_OK) {
             success = true;
         }
     }
     // Set up the UserName
     if (success && username) {
         success = false;
-        _at.cmd_start("AT+UPSD=" PROFILE ",2,");
-        _at.write_string(username);
-        _at.cmd_stop();
-        _at.resp_start();
-        _at.resp_stop();
-
-        if (_at.get_last_error() == NSAPI_ERROR_OK) {
+        if (_at.at_cmd_discard("+UPSD", "=", "%d%d%s", PROFILE, 2, username) == NSAPI_ERROR_OK) {
             success = true;
         }
     }
     // Set up the Password
     if (success && password) {
         success = false;
-        _at.cmd_start("AT+UPSD=" PROFILE ",3,");
-        _at.write_string(password);
-        _at.cmd_stop();
-        _at.resp_start();
-        _at.resp_stop();
-
-        if (_at.get_last_error() == NSAPI_ERROR_OK) {
+        if (_at.at_cmd_discard("+UPSD", "=", "%d%d%s", PROFILE, 3, password) == NSAPI_ERROR_OK) {
             success = true;
         }
     }
 
     if (success) {
-        _at.cmd_start("AT+UPSD=" PROFILE ",7,\"0.0.0.0\"");
-        _at.cmd_stop();
-        _at.resp_start();
-        _at.resp_stop();
+        _at.at_cmd_discard("+UPSD", "=", "%d%d%s", PROFILE, 7, "0.0.0.0");
 
-        _at.cmd_start("AT+UPSD=" PROFILE ",6,");
-        _at.write_int(nsapi_security_to_modem_security(auth));
-        _at.cmd_stop();
-        _at.resp_start();
-        _at.resp_stop();
-
-        if (_at.get_last_error() == NSAPI_ERROR_OK) {
+        if (_at.at_cmd_discard("+UPSD", "=", "%d%d%d", PROFILE, 6, nsapi_security_to_modem_security(auth)) == NSAPI_ERROR_OK) {
             // Activate, wait upto 30 seconds for the connection to be made
             _at.set_at_timeout(30000);
-            _at.cmd_start("AT+UPSDA=" PROFILE ",3");
-            _at.cmd_stop();
-            _at.resp_start();
-            _at.resp_stop();
+
+            nsapi_error_t err = _at.at_cmd_discard("+UPSDA", "=", "%d%d", PROFILE, 3);
+
             _at.restore_at_timeout();
 
-            if (_at.get_last_error() == NSAPI_ERROR_OK) {
+            if (err == NSAPI_ERROR_OK) {
                 Timer t1;
                 t1.start();
                 while (!(t1.read() >= 180)) {
-                    _at.cmd_start("AT+UPSND=" PROFILE ",8");
-                    _at.cmd_stop();
+                    _at.lock();
+                    _at.cmd_start_stop("+UPSND", "=", "%d%d", PROFILE, 8);
                     _at.resp_start("+UPSND:");
                     _at.skip_param(2);
                     _at.read_int() ? activated = true : activated = false;
                     _at.resp_stop();
+                    _at.unlock();
 
                     if (activated) {  //If context is activated, exit while loop and return status
                         break;
                     }
-                    wait_ms(5000);    //Wait for 5 seconds and then try again
+                    rtos::ThisThread::sleep_for(5000);    //Wait for 5 seconds and then try again
                 }
                 t1.stop();
             }
@@ -262,7 +248,7 @@ int UBLOX_AT_CellularContext::nsapi_security_to_modem_security(AuthenticationTyp
         case CHAP:
             modem_security = 2;
             break;
-#ifndef TARGET_UBLOX_C030_R41XM
+#ifndef UBX_MDM_SARA_R41XM
         case AUTOMATIC:
             modem_security = 3;
             break;
@@ -282,27 +268,20 @@ int UBLOX_AT_CellularContext::nsapi_security_to_modem_security(AuthenticationTyp
 // Disconnect the on board IP stack of the modem.
 bool UBLOX_AT_CellularContext::disconnect_modem_stack()
 {
-    bool success = false;
-
-    if (get_ip_address() != NULL) {
-        _at.cmd_start("AT+UPSDA=" PROFILE ",4");
-        _at.cmd_stop();
-        _at.resp_start();
-        _at.resp_stop();
-
-        if (_at.get_last_error() == NSAPI_ERROR_OK) {
-            success = true;
+    SocketAddress addr;
+    if (get_ip_address(&addr) == NSAPI_ERROR_OK) {
+        if (_at.at_cmd_discard("+UPSDA", "=", "%d%d", PROFILE, 4) == NSAPI_ERROR_OK) {
+            return true;
         }
     }
 
-    return success;
+    return false;
 }
 
 nsapi_error_t UBLOX_AT_CellularContext::get_imsi(char *imsi)
 {
     _at.lock();
-    _at.cmd_start("AT+CIMI");
-    _at.cmd_stop();
+    _at.cmd_start_stop("+CIMI", "");
     _at.resp_start();
     _at.read_string(imsi, MAX_IMSI_LENGTH + 1);
     _at.resp_stop();
@@ -320,9 +299,9 @@ void UBLOX_AT_CellularContext::get_next_credentials(char **config)
     }
 }
 
-const char *UBLOX_AT_CellularContext::get_gateway()
+nsapi_error_t UBLOX_AT_CellularContext::get_gateway(SocketAddress *addr)
 {
-    return get_ip_address();
+    return get_ip_address(addr);
 }
 
 const char *UBLOX_AT_CellularContext::get_apn()
@@ -345,17 +324,13 @@ CellularContext::AuthenticationType UBLOX_AT_CellularContext::get_auth()
     return _authentication_type;
 }
 
-#ifdef TARGET_UBLOX_C030_R412M
+#ifdef UBX_MDM_SARA_R412M
 CellularNetwork::RadioAccessTechnology UBLOX_AT_CellularContext::read_radio_technology()
 {
     int act;
     CellularNetwork::RadioAccessTechnology rat;
 
-    _at.cmd_start("AT+URAT?");
-    _at.cmd_stop();
-    _at.resp_start("+URAT:");
-    act = _at.read_int();
-    _at.resp_stop();
+    _at.at_cmd_int("+URAT", "?", act);
 
     switch (act) {
         case 0:
@@ -383,6 +358,6 @@ CellularNetwork::RadioAccessTechnology UBLOX_AT_CellularContext::read_radio_tech
 
     return rat;
 }
-#endif // #ifdef TARGET_UBLOX_C030_R412M
+#endif // #ifdef UBX_MDM_SARA_R412M
 
 } /* namespace mbed */

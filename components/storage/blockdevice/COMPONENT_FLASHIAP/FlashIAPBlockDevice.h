@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2016 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +21,7 @@
 #if DEVICE_FLASH
 
 #include "FlashIAP.h"
-#include "BlockDevice.h"
+#include "features/storage/blockdevice/BlockDevice.h"
 #include "platform/mbed_toolchain.h"
 
 /** BlockDevice using the FlashIAP API

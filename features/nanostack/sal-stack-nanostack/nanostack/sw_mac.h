@@ -68,6 +68,13 @@ extern int8_t ns_sw_mac_virtual_client_unregister(struct mac_api_s *api);
 extern int ns_sw_mac_fhss_register(struct mac_api_s *mac_api, struct fhss_api *fhss_api);
 
 /**
+ * @brief Unregister FHSS API instance from given software MAC instance.
+ * @param mac_api MAC instance.
+ * @return 0 on success, -1 on fail.
+ */
+extern int ns_sw_mac_fhss_unregister(struct mac_api_s *mac_api);
+
+/**
  * @brief Request registered FHSS API instance from software MAC instance.
  * @param mac_api MAC instance.
  * @return FHSS api.
@@ -96,6 +103,14 @@ extern int ns_sw_mac_phy_statistics_start(struct mac_api_s *mac_api, struct phy_
  * @return Current timestamp in us
  */
 extern uint32_t ns_sw_mac_read_current_timestamp(struct mac_api_s *mac_api);
+
+/**
+ * @brief Enable or disable Frame counter per security key. SW MAC must be create before enable this feature!
+ * @param mac_api MAC instance.
+ * @param enable_feature True will allocate frame counter table for devices / key False will clear mode and free counter table.
+ * @return 0 on success, -1 on fail.
+ */
+extern int8_t ns_sw_mac_enable_frame_counter_per_key(struct mac_api_s *mac_api, bool enable_feature);
 
 #ifdef __cplusplus
 }

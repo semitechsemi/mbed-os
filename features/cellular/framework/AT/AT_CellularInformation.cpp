@@ -17,11 +17,12 @@
 
 #include <stdio.h>
 
+#include "AT_CellularDevice.h"
 #include "AT_CellularInformation.h"
 
 using namespace mbed;
 
-AT_CellularInformation::AT_CellularInformation(ATHandler &at) : AT_CellularBase(at)
+AT_CellularInformation::AT_CellularInformation(ATHandler &at, AT_CellularDevice &device) : _at(at), _device(device)
 {
 }
 
@@ -54,7 +55,7 @@ nsapi_error_t AT_CellularInformation::get_serial_number(char *buf, size_t buf_si
         return get_info("AT+CGSN", buf, buf_size);
     }
 
-    if (!get_property(PROPERTY_AT_CGSN_WITH_TYPE)) {
+    if (!_device.get_property(AT_CellularDevice::PROPERTY_AT_CGSN_WITH_TYPE)) {
         return NSAPI_ERROR_UNSUPPORTED;
     }
 
@@ -83,8 +84,7 @@ nsapi_error_t AT_CellularInformation::get_imsi(char *imsi, size_t buf_size)
         return NSAPI_ERROR_PARAMETER;
     }
     _at.lock();
-    _at.cmd_start("AT+CIMI");
-    _at.cmd_stop();
+    _at.cmd_start_stop("+CIMI", "");
     _at.resp_start();
     _at.read_string(imsi, MAX_IMSI_LENGTH + 1);
     _at.resp_stop();

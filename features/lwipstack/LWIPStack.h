@@ -93,22 +93,15 @@ public:
          */
         virtual char *get_mac_address(char *buf, nsapi_size_t buflen);
 
-        /** Copies IP address of the network interface to user supplied buffer
-         *
-         * @param    buf        buffer to which IP address will be copied as "W:X:Y:Z"
-         * @param    buflen     size of supplied buffer
-         * @return              Pointer to a buffer, or NULL if the buffer is too small
-         */
-        virtual char *get_ip_address(char *buf, nsapi_size_t buflen);
+        /** @copydoc NetworkStack::get_ip_address */
+        virtual nsapi_error_t get_ip_address(SocketAddress *address);
 
-        /** Copies IP address of the name based network interface to user supplied buffer
+        /** Get the IPv6 link local address in SocketAddress representation
          *
-         * @param    buf        buffer to which IP address will be copied as "W:X:Y:Z"
-         * @param    buflen     size of supplied buffer
-         * @param    interface_name     naame of the interface
-         * @return              Pointer to a buffer, or NULL if the buffer is too small
+         *  @address        SocketAddress representation of the link local IPv6 address
+         *  @return         NSAPI_ERROR_OK on success, or error code
          */
-        virtual char *get_ip_address_if(char *buf, nsapi_size_t buflen, const char *interface_name);
+        virtual nsapi_error_t get_ipv6_link_local_address(SocketAddress *address);
 
         /** Copies netmask of the network interface to user supplied buffer
          *
@@ -116,7 +109,7 @@ public:
          * @param    buflen     size of supplied buffer
          * @return              Pointer to a buffer, or NULL if the buffer is too small
          */
-        virtual char *get_netmask(char *buf, nsapi_size_t buflen);
+        virtual nsapi_error_t get_netmask(SocketAddress *address);
 
         /** Copies gateway address of the network interface to user supplied buffer
          *
@@ -124,7 +117,7 @@ public:
          * @param    buflen     size of supplied buffer
          * @return              Pointer to a buffer, or NULL if the buffer is too small
          */
-        virtual char *get_gateway(char *buf, nsapi_size_t buflen);
+        virtual nsapi_error_t get_gateway(SocketAddress *address);
 
     private:
         friend class LWIP;
@@ -274,6 +267,14 @@ public:
      * @param[out] interface_out    pointer to stack interface object controlling the L3IP
      * @return                      NSAPI_ERROR_OK on success, or error code
      */
+    virtual nsapi_error_t remove_ethernet_interface(OnboardNetworkStack::Interface **interface_out);
+
+    /** Remove a network interface from IP stack
+     *
+     * Removes PPP objects,network interface from stack list, and shutdown device driver.
+     * @param[out] interface_out    pointer to stack interface object controlling the PPP
+     * @return                      NSAPI_ERROR_OK on success, or error code
+     */
     virtual nsapi_error_t remove_l3ip_interface(OnboardNetworkStack::Interface **interface_out);
 
     /** Remove a network interface from IP stack
@@ -309,6 +310,15 @@ public:
      *                  or null if not yet connected
      */
     virtual const char *get_ip_address();
+
+    /** Copies IP address of the name based network interface to user supplied buffer
+     *
+     * @param    address        SocketAddress object pointer to store the address
+     * @param    interface_name name of the interface
+     * @return                  Pointer to a buffer, or NULL if the buffer is too small
+     */
+    virtual nsapi_error_t get_ip_address_if(SocketAddress *address, const char *interface_name);
+
     /** Set the network interface as default one
       */
     virtual void set_default_interface(OnboardNetworkStack::Interface *interface);
@@ -571,6 +581,7 @@ private:
     static const ip_addr_t *get_ip_addr(bool any_addr, const struct netif *netif);
     static const ip_addr_t *get_ipv4_addr(const struct netif *netif);
     static const ip_addr_t *get_ipv6_addr(const struct netif *netif);
+    static const ip_addr_t *get_ipv6_link_local_addr(const struct netif *netif);
 
     static void add_dns_addr(struct netif *lwip_netif, const char *interface_name);
 

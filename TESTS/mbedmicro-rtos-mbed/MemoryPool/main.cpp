@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2017 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +18,10 @@
 #include "greentea-client/test_env.h"
 #include "unity.h"
 #include "utest.h"
+
+#if !defined(MBED_CONF_RTOS_PRESENT)
+#error [NOT_SUPPORTED] MemoryPool test cases require a RTOS to run.
+#else
 
 using namespace utest::v1;
 
@@ -666,3 +671,4 @@ int main()
     Harness::run(specification);
 }
 
+#endif // !defined(MBED_CONF_RTOS_PRESENT)

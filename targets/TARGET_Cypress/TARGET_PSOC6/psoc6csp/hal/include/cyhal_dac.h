@@ -9,7 +9,7 @@
 *
 ********************************************************************************
 * \copyright
-* Copyright 2018-2019 Cypress Semiconductor Corporation
+* Copyright 2018-2020 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,12 +29,13 @@
 * \addtogroup group_hal_dac DAC (Digital to Analog Converter)
 * \ingroup group_hal
 * \{
-* High level interface for interacting with the Cypress DAC.
+* High level interface for interacting with the digital to analog converter (DAC).
 *
-* \defgroup group_hal_dac_macros Macros
-* \defgroup group_hal_dac_functions Functions
-* \defgroup group_hal_dac_data_structures Data Structures
-* \defgroup group_hal_dac_enums Enumerated Types
+* This block drives a pin with a firmware configurable voltage. See the device datasheet
+* for details on which pins support DAC output.
+*
+* The cyhal_dac_write and cyhal_dac_read APIs are defined relative to the DAC's output
+* voltage range, which is device dependent.
 */
 
 #pragma once
@@ -49,23 +50,10 @@
 extern "C" {
 #endif
 
-/**
-* \addtogroup group_hal_dac_macros
-* \{
-*/
-
 /** Bad argument */
 #define CYHAL_DAC_RSLT_BAD_ARGUMENT (CY_RSLT_CREATE(CY_RSLT_TYPE_ERROR, CYHAL_RSLT_MODULE_DAC, 0))
 /** Failed to initialize DAC */
 #define CYHAL_DAC_RSLT_FAILED_INIT (CY_RSLT_CREATE(CY_RSLT_TYPE_ERROR, CYHAL_RSLT_MODULE_DAC, 1))
-
-/** \} group_hal_adc_macros */
-
-
-/**
-* \addtogroup group_hal_dac_functions
-* \{
-*/
 
 /** Initialize the DAC peripheral
  *
@@ -101,8 +89,6 @@ void cyhal_dac_write(const cyhal_dac_t *obj, uint16_t value);
  * @return The 16-bit output value
  */
 uint16_t cyhal_dac_read(cyhal_dac_t *obj);
-
-/** \} group_hal_dac_functions */
 
 #if defined(__cplusplus)
 }

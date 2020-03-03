@@ -1379,6 +1379,8 @@ static int8_t arm_6lowpan_bootstrap_down(protocol_interface_info_entry_t *cur)
     }
     cur->if_lowpan_security_params->mle_security_frame_counter = mle_service_security_get_frame_counter(cur->id);
     mle_service_interface_receiver_handler_update(cur->id, mle_6lowpan_message_handler);
+    // Reset MAC for safe upper layer memory free
+    protocol_mac_reset(cur);
     return nwk_6lowpan_down(cur);
 }
 #ifdef HAVE_6LOWPAN_ND
@@ -1593,7 +1595,7 @@ static void lowpan_neighbor_entry_remove_notify(mac_neighbor_table_entry_t *entr
 {
 
     protocol_interface_info_entry_t *cur_interface = user_data;
-    lowpan_adaptation_remove_free_indirect_table(cur_interface, entry_ptr);
+    lowpan_adaptation_neigh_remove_free_tx_tables(cur_interface, entry_ptr);
     // Sleepy host
     if (cur_interface->lowpan_info & INTERFACE_NWK_CONF_MAC_RX_OFF_IDLE) {
         mac_data_poll_protocol_poll_mode_decrement(cur_interface);
@@ -1787,7 +1789,7 @@ bootstrap_finish_check:
          */
         if (cur->lowpan_info & INTERFACE_NWK_ROUTER_DEVICE) {
             //rpl_control_set_domain_on_interface(cur, protocol_6lowpan_rpl_domain, true);
-            //rpl_control_set_callback(protocol_6lowpan_rpl_domain, protocol_6lowpan_bootstrap_rpl_callback, NULL, cur);
+            //rpl_control_set_callback(protocol_6lowpan_rpl_domain, protocol_6lowpan_bootstrap_rpl_callback, NULL, NULL, cur);
         }
 #endif
         cur->configure_flags |= INTERFACE_BOOTSTRAP_DEFINED;
@@ -2182,7 +2184,7 @@ void nwk_6lowpan_nd_address_registartion_ready(protocol_interface_info_entry_t *
             // arm_nwk_6lowpan_rpl_dodag_poison from a previous connection may have left force_leaf set
             rpl_control_force_leaf(protocol_6lowpan_rpl_domain, false);
             rpl_control_set_domain_on_interface(cur, protocol_6lowpan_rpl_domain, true);
-            rpl_control_set_callback(protocol_6lowpan_rpl_domain, protocol_6lowpan_bootstrap_rpl_callback, NULL, cur);
+            rpl_control_set_callback(protocol_6lowpan_rpl_domain, protocol_6lowpan_bootstrap_rpl_callback, NULL, NULL, cur);
         }
         // Send unicast DIS to coordinator
         nwk_bootstrap_icmp_rpl_dis_coord_msg_tx(cur);

@@ -7,7 +7,7 @@
 *
 ********************************************************************************
 * \copyright
-* Copyright 2018-2019 Cypress Semiconductor Corporation
+* Copyright 2018-2020 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,12 +24,9 @@
 *******************************************************************************/
 
 /**
-* \addtogroup group_hal_modules Driver Modules
-* \ingroup group_hal
+* \ingroup group_result
 * \{
 * Enum definition for all HAL resource modules.
-*
-* \defgroup group_hal_modules_enums Enumerated Types
 */
 
 #pragma once
@@ -40,13 +37,12 @@
 extern "C" {
 #endif
 
-
-/**
-* \addtogroup group_hal_modules_enums
-* \{
-*/
-
 /** Enum to in indicate which module an errors occurred in. */
+/**
+ * @brief Enum to specify module IDs for @ref cy_rslt_t values returned from the HAL.
+ *
+ */
+
 enum cyhal_rslt_module_chip
 {
     CYHAL_RSLT_MODULE_CHIP_HWMGR = CY_RSLT_MODULE_ABSTRACTION_HAL_BASE, //!< An error occurred in hardware management module
@@ -74,9 +70,8 @@ enum cyhal_rslt_module_chip
     CYHAL_RSLT_MODULE_UART,                                             //!< An error occurred in UART module
     CYHAL_RSLT_MODULE_USB,                                              //!< An error occurred in USB module
     CYHAL_RSLT_MODULE_WDT,                                              //!< An error occurred in WDT module
+    CYHAL_RSLT_MODULE_EZI2C,                                            //!< An error occurred in EZI2C module
 };
-
-/** \} group_hal_modules_enums */
 
 #if defined(__cplusplus)
 }

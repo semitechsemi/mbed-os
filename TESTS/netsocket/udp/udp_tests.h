@@ -19,6 +19,9 @@
 #define UDP_TESTS_H
 
 #include "../test_params.h"
+#include "mbed_trace.h"
+
+#define TRACE_GROUP "GRNT"
 
 NetworkInterface *get_interface();
 void drop_bad_packets(UDPSocket &sock, int orig_timeout);
@@ -40,7 +43,13 @@ namespace udp_global {
 #ifdef MBED_GREENTEA_TEST_UDPSOCKET_TIMEOUT_S
 static const int TESTS_TIMEOUT = MBED_GREENTEA_TEST_UDPSOCKET_TIMEOUT_S;
 #else
-static const int TESTS_TIMEOUT = 480;
+#define MESH 3
+#define WISUN 0x2345
+#if MBED_CONF_TARGET_NETWORK_DEFAULT_INTERFACE_TYPE == MESH && MBED_CONF_NSAPI_DEFAULT_MESH_TYPE == WISUN
+static const int TESTS_TIMEOUT = (25 * 60);
+#else
+static const int TESTS_TIMEOUT = (20 * 60);
+#endif
 #endif
 
 static const int MAX_SEND_SIZE_IPV4 = 536;
@@ -51,7 +60,9 @@ static const int MAX_SEND_SIZE_IPV6 = 1220;
  * Test cases
  */
 void UDPSOCKET_ECHOTEST();
+void UDPSOCKET_ECHOTEST_CONNECT_SEND_RECV();
 void UDPSOCKET_ECHOTEST_NONBLOCK();
+void UDPSOCKET_ECHOTEST_NONBLOCK_CONNECT_SEND_RECV();
 void UDPSOCKET_ECHOTEST_BURST();
 void UDPSOCKET_ECHOTEST_BURST_NONBLOCK();
 void UDPSOCKET_OPEN_CLOSE_REPEAT();

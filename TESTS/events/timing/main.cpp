@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2017 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +16,6 @@
  */
 #include "mbed_events.h"
 #include "mbed.h"
-#include "rtos.h"
 #include "greentea-client/test_env.h"
 #include "unity.h"
 #include "utest.h"

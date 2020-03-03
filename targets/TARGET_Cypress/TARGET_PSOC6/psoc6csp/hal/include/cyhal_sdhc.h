@@ -9,7 +9,7 @@
 *
 ********************************************************************************
 * \copyright
-* Copyright 2018-2019 Cypress Semiconductor Corporation
+* Copyright 2018-2020 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,12 +29,10 @@
 * \addtogroup group_hal_sdhc SDHC (SD Host Controller)
 * \ingroup group_hal
 * \{
-* High level interface for interacting with the Cypress SDHC.
+* High level interface for interacting with the SD Host Controller (SDHC).
 *
-* \defgroup group_hal_sdhc_macros Macros
-* \defgroup group_hal_sdhc_functions Functions
-* \defgroup group_hal_sdhc_data_structures Data Structures
-* \defgroup group_hal_sdhc_enums Enumerated Types
+* The SD Host Controller allows data to be read from and written to several types
+* of memory cards, including SD and eMMC (see cyhal_sdhc_card_type_t for a full list).
 */
 
 #pragma once
@@ -48,26 +46,14 @@
 extern "C" {
 #endif
 
-/**
-* \addtogroup group_hal_sdhc_macros
-* \{
-*/
-
 #define CYHAL_SDHC_RSLT_ERR_PIN (CY_RSLT_CREATE(CY_RSLT_TYPE_ERROR, CYHAL_RSLT_MODULE_SDHC, 0)) /**< Pin related Error. >*/
-
-/** \} group_hal_sdhc_macros */
-
-
-/**
-* \addtogroup group_hal_sdhc_enums
-* \{
-*/
+#define CYHAL_SDHC_RSLT_ERR_UNSUPPORTED (CY_RSLT_CREATE(CY_RSLT_TYPE_ERROR, CYHAL_RSLT_MODULE_SDHC, 1)) /**< Requested feature is not supported on this hardware. >*/
 
 /** Card types */
 typedef enum
 {
     CYHAL_SDHC_SD, //!< Secure Digital card
-    CYHAL_SDHC_SDIO, //!< CD Input Output card
+    CYHAL_SDHC_SDIO, //!< SD Input Output card
     CYHAL_SDHC_EMMC, //!< Embedded Multimedia card
     CYHAL_SDHC_COMBO, //!< Combo Card (SD + SDIO)
     CYHAL_SDHC_UNUSABLE, //!< Unusable card or unsupported type
@@ -95,28 +81,12 @@ typedef enum {
     CYHAL_SDHC_ALL_INTERRUPTS = 0xFFFF, //!> Is used to enable/disable all interrupts
 } cyhal_sdhc_event_t;
 
-/** \} group_hal_sdhc_enums */
-
-
-/**
-* \addtogroup group_hal_sdhc_macros
-* \{
-*/
-
 #define CYHAL_SDHC_RSLT_ERR_PIN (CY_RSLT_CREATE(CY_RSLT_TYPE_ERROR, CYHAL_RSLT_MODULE_SDHC, 0)) /**< Pin related Error. >*/
-
-/** \} group_hal_sdhc_macros */
-
-
-/**
-* \addtogroup group_hal_sdhc_data_structures
-* \{
-*/
 
 /** Handler for SDHC interrupts */
 typedef void (*cyhal_sdhc_event_callback_t)(void *callback_arg, cyhal_sdhc_event_t event);
 
-/** Defines configuration options for the SDHC block */
+/** @brief Defines configuration options for the SDHC block */
 typedef struct
 {
     bool                 enableLedControl; //!< Drive one IO to indicate when the card is being accessed
@@ -124,14 +94,6 @@ typedef struct
     bool                 isEmmc;   //!< true if eMMC card, otherwise false
     uint8_t              busWidth; //!< The desired bus width
 } cyhal_sdhc_config_t;
-
-/** \} group_hal_sdhc_data_structures */
-
-
-/**
-* \addtogroup group_hal_sdhc_functions
-* \{
-*/
 
 /** Initialize the SDHC peripheral
  *
@@ -260,8 +222,6 @@ void cyhal_sdhc_register_callback(cyhal_sdhc_t *obj, cyhal_sdhc_event_callback_t
  * @param[in] enable        True to turn on interrupts, False to turn off
  */
 void cyhal_sdhc_enable_event(cyhal_sdhc_t *obj, cyhal_sdhc_event_t event, uint8_t intrPriority, bool enable);
-
-/** \} group_hal_sdhc_functions */
 
 #if defined(__cplusplus)
 }

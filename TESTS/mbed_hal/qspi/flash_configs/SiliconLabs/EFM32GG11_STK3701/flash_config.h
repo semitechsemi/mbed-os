@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2018-2018 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,5 +23,7 @@
 #undef QSPI_SECTOR_COUNT
 #define QSPI_SECTOR_COUNT                       1024 // for MX25R3235F
 #endif
+
+#define QSPI_MIN_FREQUENCY  2000000
 
 #endif // MBED_QSPI_FLASH_CONFIG_H

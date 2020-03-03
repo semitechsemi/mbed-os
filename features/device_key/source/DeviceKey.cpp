@@ -17,21 +17,18 @@
 #include "DeviceKey.h"
 
 #if DEVICEKEY_ENABLED
-#include "mbedtls/config.h"
 #include "mbedtls/cmac.h"
 #include "mbedtls/platform.h"
-#include "KVStore.h"
-#include "TDBStore.h"
-#include "KVMap.h"
-#include "kv_config.h"
+#include "features/storage/kvstore/include/KVStore.h"
+#include "features/storage/kvstore/tdbstore/TDBStore.h"
+#include "features/storage/kvstore/kv_map/KVMap.h"
+#include "features/storage/kvstore/conf/kv_config.h"
 #include "mbed_wait_api.h"
-#include "stdlib.h"
+#include <stdlib.h>
 #include "platform/mbed_error.h"
 #include <string.h>
 #include "entropy.h"
-#include "platform_mbed.h"
 #include "mbed_trace.h"
-#include "ssl_internal.h"
 
 #define TRACE_GROUP "DEVKEY"
 
@@ -96,21 +93,8 @@ int DeviceKey::generate_derived_key(const unsigned char *salt, size_t isalt_size
 
     //First try to read the key from KVStore
     int ret = read_key_from_kvstore(key_buff, actual_size);
-    if (DEVICEKEY_SUCCESS != ret && DEVICEKEY_NOT_FOUND != ret) {
+    if (DEVICEKEY_SUCCESS != ret) {
         return ret;
-    }
-
-    //If the key was not found in KVStore we will create it by using random generation and then save it to KVStore
-    if (DEVICEKEY_NOT_FOUND == ret) {
-        ret = generate_key_by_random(key_buff, actual_size);
-        if (DEVICEKEY_SUCCESS != ret) {
-            return ret;
-        }
-
-        ret = device_inject_root_of_trust(key_buff, actual_size);
-        if (DEVICEKEY_SUCCESS != ret) {
-            return ret;
-        }
     }
 
     ret = get_derived_key(key_buff, actual_size, salt, isalt_size, output, ikey_type);
@@ -261,25 +245,23 @@ finish:
     return DEVICEKEY_SUCCESS;
 }
 
-int DeviceKey::generate_key_by_random(uint32_t *output, size_t size)
+int DeviceKey::generate_root_of_trust()
 {
     int ret = DEVICEKEY_GENERATE_RANDOM_ERROR;
+    uint32_t key_buff[DEVICE_KEY_32BYTE / sizeof(uint32_t)];
+    size_t actual_size = DEVICE_KEY_32BYTE;
 
-    if (DEVICE_KEY_16BYTE > size) {
-        return DEVICEKEY_BUFFER_TOO_SMALL;
-    } else if (DEVICE_KEY_16BYTE != size && DEVICE_KEY_32BYTE != size) {
-        return DEVICEKEY_INVALID_PARAM;
+    if (read_key_from_kvstore(key_buff, actual_size) == DEVICEKEY_SUCCESS) {
+        return DEVICEKEY_ALREADY_EXIST;
     }
 
-#if defined(DEVICE_TRNG) || defined(MBEDTLS_ENTROPY_NV_SEED)
-    uint32_t test_buff[DEVICE_KEY_32BYTE / sizeof(int)];
+#if defined(DEVICE_TRNG) || defined(MBEDTLS_ENTROPY_NV_SEED) || defined(MBEDTLS_ENTROPY_HARDWARE_ALT)
     mbedtls_entropy_context *entropy = new mbedtls_entropy_context;
     mbedtls_entropy_init(entropy);
-    memset(output, 0, size);
-    memset(test_buff, 0, size);
+    memset(key_buff, 0, actual_size);
 
-    ret = mbedtls_entropy_func(entropy, (unsigned char *)output, size);
-    if (ret != MBED_SUCCESS || mbedtls_ssl_safer_memcmp(test_buff, (unsigned char *)output, size) == 0) {
+    ret = mbedtls_entropy_func(entropy, (unsigned char *)key_buff, actual_size);
+    if (ret != MBED_SUCCESS) {
         ret = DEVICEKEY_GENERATE_RANDOM_ERROR;
     } else {
         ret = DEVICEKEY_SUCCESS;
@@ -287,7 +269,7 @@ int DeviceKey::generate_key_by_random(uint32_t *output, size_t size)
 
     mbedtls_entropy_free(entropy);
     delete entropy;
-
+    ret = device_inject_root_of_trust(key_buff, actual_size);
 #endif
 
     return ret;

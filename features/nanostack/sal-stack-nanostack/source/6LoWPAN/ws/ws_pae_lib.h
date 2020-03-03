@@ -33,7 +33,7 @@ typedef NS_LIST_HEAD(kmp_entry_t, link) kmp_list_t;
 
 typedef struct {
     kmp_list_t kmp_list;               /**< Ongoing KMP negotiations */
-    kmp_addr_t addr;                  /**< EUI-64 (Relay IP address, Relay port) */
+    kmp_addr_t addr;                   /**< EUI-64 (Relay IP address, Relay port) */
     sec_prot_keys_t sec_keys;          /**< Security keys */
     uint32_t ticks;                    /**< Ticks */
     uint16_t retry_ticks;              /**< Retry ticks */
@@ -88,7 +88,7 @@ int8_t ws_pae_lib_kmp_list_delete(kmp_list_t *kmp_list, kmp_api_t *kmp);
 void ws_pae_lib_kmp_list_free(kmp_list_t *kmp_list);
 
 /**
- * ws_pae_lib_kmp_list_type_get gets KMP entry from KMP list based on KMP type
+ * ws_pae_lib_kmp_list_type_get gets KMP from KMP list based on KMP type
  *
  * \param kmp_list KMP list
  * \param type type
@@ -98,6 +98,18 @@ void ws_pae_lib_kmp_list_free(kmp_list_t *kmp_list);
  *
  */
 kmp_api_t *ws_pae_lib_kmp_list_type_get(kmp_list_t *kmp_list, kmp_type_e type);
+
+/**
+ * ws_pae_lib_kmp_list_instance_id_get gets KMP from KMP list based on instance identifier
+ *
+ * \param kmp_list KMP list
+ * \param instance_id instance identifier
+ *
+ * \return KMP on success
+ * \return NULL on failure
+ *
+ */
+kmp_api_t *ws_pae_lib_kmp_list_instance_id_get(kmp_list_t *kmp_list, uint8_t instance_id);
 
 /**
  * ws_pae_lib_kmp_list_entry_get gets KMP entry from KMP list based on KMP
@@ -261,6 +273,25 @@ void ws_pae_lib_supp_delete(supp_entry_t *entry);
 void ws_pae_lib_supp_timer_ticks_set(supp_entry_t *entry, uint32_t ticks);
 
 /**
+ *  ws_pae_lib_supp_timer_ticks_add adds supplicant timer ticks
+ *
+ * \param entry supplicant entry
+ * \param ticks ticks
+ *
+ */
+void ws_pae_lib_supp_timer_ticks_add(supp_entry_t *entry, uint32_t ticks);
+
+/**
+ *  ws_pae_lib_supp_timer_is_running checks whether supplicant timer is running
+ *
+ * \param entry supplicant entry
+ *
+ * \return TRUE timer is running, FALSE timer is not running
+ *
+ */
+bool ws_pae_lib_supp_timer_is_running(supp_entry_t *entry);
+
+/**
  *  ws_pae_lib_supp_list_to_active move supplicant to active supplicants list
  *
  * \param active_supp_list list of active supplicants
@@ -279,6 +310,18 @@ void ws_pae_lib_supp_list_to_active(supp_list_t *active_supp_list, supp_list_t *
  *
  */
 void ws_pae_lib_supp_list_to_inactive(supp_list_t *active_supp_list, supp_list_t *inactive_supp_list, supp_entry_t *entry);
+
+/**
+ *  ws_pae_lib_supp_list_purge purge inactive supplicants list
+ *
+ * \param active_supp_list list of active supplicants
+ * \param inactive_supp_list list of inactive supplicants
+ * \param max_number maximum number of supplicant entries, can be set to 0 in combination with max_purge
+ *                   to free list entries even when maximum number supplicant entries has not been reached
+ * \param max_purge maximum number of supplicants to purge in one call, 0 means not limited
+ *
+ */
+void ws_pae_lib_supp_list_purge(supp_list_t *active_supp_list, supp_list_t *inactive_supp_list, uint16_t max_number, uint8_t max_purge);
 
 /**
  *  ws_pae_lib_supp_list_kmp_count counts the number of KMPs of a certain type in a list of supplicants

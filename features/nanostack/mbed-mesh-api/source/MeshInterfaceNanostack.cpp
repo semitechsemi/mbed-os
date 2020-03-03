@@ -23,16 +23,16 @@
 #include "ip6string.h"
 #include "mbed_error.h"
 
-char *Nanostack::Interface::get_ip_address(char *buf, nsapi_size_t buflen)
+nsapi_error_t Nanostack::Interface::get_ip_address(SocketAddress *address)
 {
     NanostackLockGuard lock;
     uint8_t binary_ipv6[16];
 
-    if (buflen >= 40 && arm_net_address_get(interface_id, ADDR_IPV6_GP, binary_ipv6) == 0) {
-        ip6tos(binary_ipv6, buf);
-        return buf;
+    if (arm_net_address_get(interface_id, ADDR_IPV6_GP, binary_ipv6) == 0) {
+        address->set_ip_bytes(binary_ipv6, NSAPI_IPv6);
+        return NSAPI_ERROR_OK;
     } else {
-        return NULL;
+        return NSAPI_ERROR_NO_ADDRESS;
     }
 }
 
@@ -48,14 +48,14 @@ char *Nanostack::Interface::get_mac_address(char *buf, nsapi_size_t buflen)
     }
 }
 
-char *Nanostack::Interface::get_netmask(char *, nsapi_size_t)
+nsapi_error_t Nanostack::Interface::get_netmask(SocketAddress *address)
 {
-    return NULL;
+    return NSAPI_ERROR_UNSUPPORTED;
 }
 
-char *Nanostack::Interface::get_gateway(char *, nsapi_size_t)
+nsapi_error_t Nanostack::Interface::get_gateway(SocketAddress *address)
 {
-    return NULL;
+    return NSAPI_ERROR_UNSUPPORTED;
 }
 
 nsapi_connection_status_t Nanostack::Interface::get_connection_status() const
@@ -69,18 +69,9 @@ void Nanostack::Interface::attach(
     _connection_status_cb = status_cb;
 }
 
-Nanostack::Interface::Interface(NanostackPhy &phy) : interface_phy(phy), interface_id(-1), _device_id(-1),
-    _connect_status(NSAPI_STATUS_DISCONNECTED), _previous_connection_status(NSAPI_STATUS_DISCONNECTED), _blocking(true)
+Nanostack::Interface::Interface(NanostackPhy &phy) : interface_phy(phy)
 {
     mesh_system_init();
-}
-
-
-InterfaceNanostack::InterfaceNanostack()
-    : _interface(NULL),
-      ip_addr_str(), mac_addr_str(), _blocking(true)
-{
-    // Nothing to do
 }
 
 int InterfaceNanostack::connect()
@@ -177,12 +168,14 @@ Nanostack *InterfaceNanostack::get_stack()
     return &Nanostack::get_instance();
 }
 
-const char *InterfaceNanostack::get_ip_address()
+nsapi_error_t InterfaceNanostack::get_ip_address(SocketAddress *address)
 {
-    if (_interface->get_ip_address(ip_addr_str, sizeof(ip_addr_str))) {
-        return ip_addr_str;
+    if (_interface->get_ip_address(address) == NSAPI_ERROR_OK) {
+        ip_addr = address->get_ip_address();
+        return NSAPI_ERROR_OK;
     }
-    return NULL;
+
+    return NSAPI_ERROR_NO_ADDRESS;
 }
 
 const char *InterfaceNanostack::get_mac_address()

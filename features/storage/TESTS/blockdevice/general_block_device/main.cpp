@@ -64,7 +64,7 @@ using namespace utest::v1;
 #define TEST_BLOCK_COUNT 10
 #define TEST_ERROR_MASK 16
 #define TEST_NUM_OF_THREADS 5
-#define TEST_THREAD_STACK_SIZE 1024
+#define TEST_THREAD_STACK_SIZE 1152
 
 uint8_t num_of_sectors = TEST_NUM_OF_THREADS * TEST_BLOCK_COUNT;
 uint32_t sectors_addr[TEST_NUM_OF_THREADS * TEST_BLOCK_COUNT] = {0};
@@ -308,6 +308,7 @@ end:
     delete[] write_block;
 }
 
+#if defined(MBED_CONF_RTOS_PRESENT)
 static void test_thread_job()
 {
     static int thread_num = 0;
@@ -392,8 +393,8 @@ void test_multi_threads()
 
         delete[] bd_thread;
     }
-
 }
+#endif
 
 void test_erase_functionality()
 {
@@ -689,6 +690,40 @@ void test_deinit_bd()
     block_device = NULL;
 }
 
+void test_write_deinit_init()
+{
+    TEST_SKIP_UNLESS_MESSAGE(block_device != NULL, "no block device found.");
+    // Determine start_address & stop_address
+    bd_addr_t addr = sectors_addr[rand() % num_of_sectors];
+    bd_size_t erase_size = block_device->get_erase_size(addr);
+    bd_size_t prog_size = block_device->get_program_size();
+    uint8_t *prog = (uint8_t *) malloc(prog_size);
+    TEST_ASSERT_NOT_EQUAL(prog, 0);
+    uint8_t *buf = (uint8_t *) malloc(prog_size);
+    TEST_ASSERT_NOT_EQUAL(buf, 0);
+
+    for (int i = 0; i < 3; i++) {
+        // Generate test pattern
+        for (int j = 0; j < prog_size; j++) {
+            prog[j] = (uint8_t)'0' + i + j;
+        }
+
+        int err;
+        err = block_device->erase(addr, erase_size);
+        TEST_ASSERT_EQUAL(err, 0);
+        err = block_device->program(prog, addr, prog_size);
+        TEST_ASSERT_EQUAL(err, 0);
+        err = block_device->deinit();
+        TEST_ASSERT_EQUAL(0, err);
+        err = block_device->init();
+        TEST_ASSERT_EQUAL(0, err);
+        err = block_device->read(buf, addr, prog_size);
+        TEST_ASSERT_EQUAL(0, memcmp(prog, buf, prog_size));
+    }
+    free(prog);
+    free(buf);
+}
+
 void test_get_type_functionality()
 {
     utest_printf("\nTest get blockdevice type..\n");
@@ -726,8 +761,11 @@ typedef struct {
 
 template_case_t template_cases[] = {
     {"Testing Init block device", test_init_bd, greentea_failure_handler},
+    {"Testing write -> deinit -> init -> read", test_write_deinit_init, greentea_failure_handler},
     {"Testing read write random blocks", test_random_program_read_erase, greentea_failure_handler},
+#if defined(MBED_CONF_RTOS_PRESENT)
     {"Testing multi threads erase program read", test_multi_threads, greentea_failure_handler},
+#endif
     {"Testing contiguous erase, write and read", test_contiguous_erase_write_read, greentea_failure_handler},
     {"Testing BlockDevice erase functionality", test_erase_functionality, greentea_failure_handler},
     {"Testing program read small data sizes", test_program_read_small_data_sizes, greentea_failure_handler},
@@ -806,7 +844,7 @@ int main()
 
 
     Specification specification(greentea_test_setup, cases, total_num_cases,
-                                greentea_test_teardown_handler, (test_failure_handler_t)greentea_failure_handler);
+                                greentea_test_teardown_handler, default_handler);
 
     return !Harness::run(specification);
 }

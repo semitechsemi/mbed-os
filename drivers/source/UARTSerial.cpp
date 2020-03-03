@@ -36,6 +36,19 @@ UARTSerial::UARTSerial(PinName tx, PinName rx, int baud) :
     enable_rx_irq();
 }
 
+UARTSerial::UARTSerial(const serial_pinmap_t &static_pinmap, int baud) :
+    SerialBase(static_pinmap, baud),
+    _blocking(true),
+    _tx_irq_enabled(false),
+    _rx_irq_enabled(false),
+    _tx_enabled(true),
+    _rx_enabled(true),
+    _dcd_irq(NULL)
+{
+    /* Attatch IRQ routines to the serial device. */
+    enable_rx_irq();
+}
+
 UARTSerial::~UARTSerial()
 {
     delete _dcd_irq;
@@ -54,7 +67,7 @@ void UARTSerial::set_baud(int baud)
 void UARTSerial::set_data_carrier_detect(PinName dcd_pin, bool active_high)
 {
     delete _dcd_irq;
-    _dcd_irq = NULL;
+    _dcd_irq = nullptr;
 
     if (dcd_pin != NC) {
         _dcd_irq = new InterruptIn(dcd_pin);
@@ -348,7 +361,7 @@ void UARTSerial::enable_rx_irq()
 
 void UARTSerial::disable_rx_irq()
 {
-    SerialBase::attach(NULL, RxIrq);
+    SerialBase::attach(nullptr, RxIrq);
     _rx_irq_enabled = false;
 }
 
@@ -360,44 +373,24 @@ void UARTSerial::enable_tx_irq()
 
 void UARTSerial::disable_tx_irq()
 {
-    SerialBase::attach(NULL, TxIrq);
+    SerialBase::attach(nullptr, TxIrq);
     _tx_irq_enabled = false;
 }
 
 int UARTSerial::enable_input(bool enabled)
 {
-    core_util_critical_section_enter();
-    if (_rx_enabled != enabled) {
-        if (enabled) {
-            UARTSerial::rx_irq();
-            if (!_rxbuf.full()) {
-                enable_rx_irq();
-            }
-        } else {
-            disable_rx_irq();
-        }
-        _rx_enabled = enabled;
-    }
-    core_util_critical_section_exit();
+    api_lock();
+    SerialBase::enable_input(enabled);
+    api_unlock();
 
     return 0;
 }
 
 int UARTSerial::enable_output(bool enabled)
 {
-    core_util_critical_section_enter();
-    if (_tx_enabled != enabled) {
-        if (enabled) {
-            UARTSerial::tx_irq();
-            if (!_txbuf.empty()) {
-                enable_tx_irq();
-            }
-        } else {
-            disable_tx_irq();
-        }
-        _tx_enabled = enabled;
-    }
-    core_util_critical_section_exit();
+    api_lock();
+    SerialBase::enable_output(enabled);
+    api_unlock();
 
     return 0;
 }

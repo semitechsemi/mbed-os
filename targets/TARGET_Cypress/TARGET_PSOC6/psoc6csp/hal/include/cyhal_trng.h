@@ -9,7 +9,7 @@
 *
 ********************************************************************************
 * \copyright
-* Copyright 2018-2019 Cypress Semiconductor Corporation
+* Copyright 2018-2020 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,12 +29,9 @@
 * \addtogroup group_hal_trng TRNG (True Random Number Generator)
 * \ingroup group_hal
 * \{
-* High level interface for interacting with the Cypress TRNG.
+* High level interface for interacting with the true random number generator (TRNG).
 *
-* \defgroup group_hal_trng_macros Macros
-* \defgroup group_hal_trng_functions Functions
-* \defgroup group_hal_trng_data_structures Data Structures
-* \defgroup group_hal_trng_enums Enumerated Types
+* This block uses dedicated hardware to efficiently generate truly random numbers.
 */
 
 #pragma once
@@ -56,11 +53,6 @@ extern "C" {
  */
 #define CYHAL_TRNG_RSLT_ERR_HW (CY_RSLT_CREATE(CY_RSLT_TYPE_ERROR, CYHAL_RSLT_MODULE_TRNG, 1))
 
-/**
-* \addtogroup group_hal_trng_functions
-* \{
-*/
-
 /** Initialize the random number generator.
  *
  * @param[out] obj The random number generator object
@@ -80,8 +72,6 @@ void cyhal_trng_free(cyhal_trng_t *obj);
  * @return The random number generated
  */
 uint32_t cyhal_trng_generate(const cyhal_trng_t *obj);
-
-/** \} group_hal_trng_functions */
 
 #if defined(__cplusplus)
 }

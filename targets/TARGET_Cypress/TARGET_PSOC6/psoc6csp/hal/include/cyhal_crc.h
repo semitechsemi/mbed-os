@@ -2,14 +2,14 @@
 * \file cyhal_crc.h
 *
 * \brief
-* Provides a high level interface for interacting with the Cypress CRC accelerator. 
+* Provides a high level interface for interacting with the Cypress CRC accelerator.
 * This interface abstracts out the chip specific details. If any chip specific
 * functionality is necessary, or performance is critical the low level functions
 * can be used directly.
 *
 ********************************************************************************
 * \copyright
-* Copyright 2018-2019 Cypress Semiconductor Corporation
+* Copyright 2018-2020 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,12 +29,15 @@
 * \addtogroup group_hal_crc CRC (Cyclic Redundancy Check)
 * \ingroup group_hal
 * \{
-* High level interface for interacting with the Cypress CRC.
+* High level interface for interacting with the cyclic redundancy check (CRC), which provides hardware
+* accelerated CRC computations.
+* The CRC APIs are structured to enable usage in situations where the entire input data
+* set is not available in memory at one time. Therefore, each conversion consists of three steps:
+* * A single call to cyhal_crc_start, to initialize data structures for this computation
+* * One or more calls to cyhal_crc_compute, to provide chunks of data.
+* * A single call to cyhal_crc_finish, to finalize the computation and retrieve the result.
 *
-* \defgroup group_hal_crc_macros Macros
-* \defgroup group_hal_crc_functions Functions
-* \defgroup group_hal_crc_data_structures Data Structures
-* \defgroup group_hal_crc_enums Enumerated Types
+* Many of the algorithm parameters can be customized; see crc_algorithm_t for more details.
 */
 
 #pragma once
@@ -49,23 +52,10 @@
 extern "C" {
 #endif
 
-/**
-* \addtogroup group_hal_crc_macros
-* \{
-*/
-
 /** Invalid argument */
 #define CYHAL_CRC_RSLT_ERR_BAD_ARGUMENT (CY_RSLT_CREATE(CY_RSLT_TYPE_ERROR, CYHAL_RSLT_MODULE_CRC, 0))
 
-/** \} group_hal_crc_macros */
-
-
-/**
-* \addtogroup group_hal_crc_data_structures
-* \{
-*/
-
-/** CRC algorithm parameters */
+/** @brief CRC algorithm parameters */
 typedef struct
 {
     uint32_t width; //!< Bit width of the CRC
@@ -81,14 +71,6 @@ typedef struct
     bool dataReverse;
     bool remReverse; //!< If 1, the remainder is reversed. If 0, it is not.
 } crc_algorithm_t;
-
-/** \} group_hal_crc_data_structures */
-
-
-/**
-* \addtogroup group_hal_crc_functions
-* \{
-*/
 
 /** Initialize the CRC generator. This function reserves the CRYPTO block for CRC calculations.
  *
@@ -130,8 +112,6 @@ cy_rslt_t cyhal_crc_compute(const cyhal_crc_t *obj, const uint8_t *data, size_t 
  * @return The status of the compute request
  */
 cy_rslt_t cyhal_crc_finish(const cyhal_crc_t *obj, uint32_t *crc);
-
-/** \} group_hal_crc_functions */
 
 #if defined(__cplusplus)
 }

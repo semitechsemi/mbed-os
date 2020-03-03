@@ -23,6 +23,8 @@
 
 #include "equeue_stub.h"
 
+#define EXPECTED_DNS_RESULT 1
+
 // Control nsapi stub return value. See stubs/nsapi_dns_stub.cpp
 extern nsapi_error_t nsapi_stub_return_value;
 
@@ -144,7 +146,8 @@ TEST_F(TestNetworkStack, constructor)
 
 TEST_F(TestNetworkStack, get_ip_address_default)
 {
-    EXPECT_EQ(stack->NetworkStack::get_ip_address(), (char *)NULL);
+    SocketAddress a;
+    EXPECT_EQ(stack->NetworkStack::get_ip_address(&a), NSAPI_ERROR_UNSUPPORTED);
 }
 
 /* gethostbyname */
@@ -218,7 +221,7 @@ TEST_F(TestNetworkStack, gethostbyname_async_eventqueue_simple_address)
     EXPECT_FALSE(callback_is_called);
     EXPECT_EQ(stack->gethostbyname_async("127.0.0.1", mbed::callback(my_callback), NSAPI_IPv4), NSAPI_ERROR_OK);
     EXPECT_TRUE(callback_is_called);
-    EXPECT_EQ(result_received, NSAPI_ERROR_OK);
+    EXPECT_EQ(result_received, EXPECTED_DNS_RESULT);
     EXPECT_EQ(std::string(address_received.get_ip_address()), stack->ip_address);
 }
 
